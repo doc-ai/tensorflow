@@ -25,7 +25,7 @@ SQLITE_COPTS = [
         "-DHAVE_FDATASYNC=1",
         "-DHAVE_GMTIME_R=1",
         "-DHAVE_LOCALTIME_R=1",
-        "-DHAVE_POSIX_FALLOCATE=1",
+        "-DHAVE_POSIX_FALLOCATE=0",
         "-DHAVE_USLEEP=1",
     ],
 })
