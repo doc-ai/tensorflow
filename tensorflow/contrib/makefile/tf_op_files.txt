@@ -204,6 +204,7 @@ tensorflow/core/kernels/reshape_op.cc
 tensorflow/core/kernels/reshape_util.cc
 tensorflow/core/kernels/resize_bilinear_op.cc
 tensorflow/core/kernels/resize_nearest_neighbor_op.cc
+tensorflow/core/kernels/resource_variable_ops.cc
 tensorflow/core/kernels/restore_op.cc
 tensorflow/core/kernels/reverse_op.cc
 tensorflow/core/kernels/reverse_sequence_op.cc
@@ -312,6 +313,7 @@ tensorflow/core/ops/parsing_ops.cc
 tensorflow/core/ops/random_grad.cc
 tensorflow/core/ops/random_ops.cc
 tensorflow/core/ops/remote_fused_graph_ops.cc
+tensorflow/core/ops/resource_variable_ops.cc
 tensorflow/core/ops/script_ops.cc
 tensorflow/core/ops/sendrecv_ops.cc
 tensorflow/core/ops/sparse_ops.cc
