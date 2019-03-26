@@ -144,6 +144,7 @@ tensorflow/core/kernels/lookup_table_init_op.cc
 tensorflow/core/kernels/lookup_table_op.cc
 tensorflow/core/kernels/lookup_util.cc
 tensorflow/core/kernels/lrn_op.cc
+tensorflow/core/kernels/l2loss_op.cc
 tensorflow/core/kernels/matmul_op.cc
 tensorflow/core/kernels/maxpooling_op.cc
 tensorflow/core/kernels/meta_support.cc
