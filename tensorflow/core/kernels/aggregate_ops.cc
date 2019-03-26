@@ -78,16 +78,16 @@ class AddNOp : public OpKernel {
 
 #define I(IDX) ctx->input(input_indices[IDX]).flat<T>()
 
-#if defined(__ANDROID_TYPES_SLIM__)
-    // On Android by default,we only support additions of two arguments, so we
-    // can reduce the number of template instantiations.
-    OP_REQUIRES(ctx, num == 2,
-                errors::InvalidArgument("Only additions of two arguments "
-                                        "supported. Num inputs: ",
-                                        num));
-    functor::Add2Functor<Device, T> functor2;
-    functor2(ctx->template eigen_device<Device>(), To, I(0), I(1));
-#else
+// #if defined(__ANDROID_TYPES_SLIM__)
+//     // On Android by default,we only support additions of two arguments, so we
+//     // can reduce the number of template instantiations.
+//     OP_REQUIRES(ctx, num == 2,
+//                 errors::InvalidArgument("Only additions of two arguments "
+//                                         "supported. Num inputs: ",
+//                                         num));
+//     functor::Add2Functor<Device, T> functor2;
+//     functor2(ctx->template eigen_device<Device>(), To, I(0), I(1));
+// #else
     static const int kWidth = 8;
     int r = num % kWidth;
 
@@ -147,7 +147,7 @@ class AddNOp : public OpKernel {
       functor8p(ctx->template eigen_device<Device>(), To, I(r), I(r + 1),
                 I(r + 2), I(r + 3), I(r + 4), I(r + 5), I(r + 6), I(r + 7));
     }
-#endif  // defined(__ANDROID_TYPES_SLIM__)
+// #endif  // defined(__ANDROID_TYPES_SLIM__)
 
 #undef I
   }
