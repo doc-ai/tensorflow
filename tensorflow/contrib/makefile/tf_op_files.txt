@@ -74,6 +74,7 @@ tensorflow/core/kernels/cwise_op_log.cc
 tensorflow/core/kernels/cwise_op_logical_and.cc
 tensorflow/core/kernels/cwise_op_logical_not.cc
 tensorflow/core/kernels/cwise_op_logical_or.cc
+tensorflow/core/kernels/cwise_op_log1p.cc
 tensorflow/core/kernels/cwise_op_maximum.cc
 tensorflow/core/kernels/cwise_op_minimum.cc
 tensorflow/core/kernels/cwise_op_mul_1.cc
