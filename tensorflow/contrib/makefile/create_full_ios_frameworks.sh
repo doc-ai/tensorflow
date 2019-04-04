@@ -18,37 +18,41 @@
 
 # Must be run after: build_all_ios.sh
 # Creates an iOS framework which is placed under:
-#    gen/ios_frameworks/tensorflow_experimental.framework.zip
+#    gen/ios_frameworks/tensorflow.framework.zip
 
 set -e
 pushd .
 
-echo "Starting"
+echo "Starting full build"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TMP_DIR=$(mktemp -d)
 echo "Package dir: " $TMP_DIR
 FW_DIR=$TMP_DIR/tensorflow_ios_frameworks
-FW_DIR_TFCORE=$FW_DIR/tensorflow_experimental.framework
+FW_DIR_TFCORE=$FW_DIR/tensorflow.framework
 FW_DIR_TFCORE_HDRS=$FW_DIR_TFCORE/Headers
 
 echo "Creating target Headers directories"
 mkdir -p $FW_DIR_TFCORE_HDRS
 
-# broken with bazel 0.23.2
-# Using cfg = "data" on an attribute is a noop and no longer supported. 
-# Please remove it. You can use --incompatible_disallow_data_transition=false to temporarily disable this check.
-
-# echo "Generate master LICENSE file and copy to target"
-# bazel build //tensorflow/tools/lib_package:clicenses_generate
-# cp $SCRIPT_DIR/../../../bazel-genfiles/tensorflow/tools/lib_package/include/tensorflow/c/LICENSE \
-#    $FW_DIR_TFCORE
+echo "Copy existing LICENSE file to target"
+cp $SCRIPT_DIR/../../../LICENSE \
+   $FW_DIR_TFCORE
 
 echo "Copying static libraries"
 cp $SCRIPT_DIR/gen/lib/libtensorflow-core.a \
-   $FW_DIR_TFCORE/tensorflow_experimental
+   $FW_DIR_TFCORE/tensorflow
 cp $SCRIPT_DIR/gen/protobuf_ios/lib/libprotobuf.a \
-   $FW_DIR_TFCORE/libprotobuf_experimental.a
+   $FW_DIR_TFCORE/libprotobuf
+
+# Copy nsync (forget where this is built from and generated to)
+# ...
+
+chmod +x $FW_DIR_TFCORE/tensorflow
+chmod +x $FW_DIR_TFCORE/libprotobuf
+# chmod +x $FW_DIR_TFCORE/nsync
+
+# tensorflow
 
 echo "Headers, populating: tensorflow (core)"
 cd $SCRIPT_DIR/../../..
@@ -57,57 +61,94 @@ cd $FW_DIR_TFCORE_HDRS
 tar xf tmp.tar
 rm -f tmp.tar
 
-echo "Headers, populating: third_party"
-cd $SCRIPT_DIR/../../..
-tar cf $FW_DIR_TFCORE_HDRS/tmp.tar third_party
+# ./downloads/nsync/public
+
+echo "Headers, populating: nsync"
+cd $SCRIPT_DIR/downloads/nsync/public
+find . -name "*.h" | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
 cd $FW_DIR_TFCORE_HDRS
 tar xf tmp.tar
 rm -f tmp.tar
 
-echo "Headers, populating: unsupported"
-cd $SCRIPT_DIR/downloads/eigen
-tar cf $FW_DIR_TFCORE_HDRS/third_party/eigen3/tmp.tar unsupported
-cd $FW_DIR_TFCORE_HDRS/third_party/eigen3
+# eigen :: this is ridiculous
+
+mkdir -p $FW_DIR_TFCORE_HDRS/third_party
+
+# third_party/ eigen3
+
+echo "Headers, populating: eigen (third party)"
+cd $SCRIPT_DIR/../../../third_party
+tar -cf $FW_DIR_TFCORE_HDRS/third_party/tmp.tar eigen3
+cd $FW_DIR_TFCORE_HDRS/third_party
 tar xf tmp.tar
 rm -f tmp.tar
 
-echo "Headers, populating: Eigen"
-cd $SCRIPT_DIR/downloads/eigen
-tar cf $FW_DIR_TFCORE_HDRS/third_party/eigen3/tmp.tar Eigen
-cd $FW_DIR_TFCORE_HDRS/third_party/eigen3
-tar xf tmp.tar
-rm -f tmp.tar
+# ./downloads/eigen/ unsupported -> unsupported
 
-echo "Headers, populating: tensorflow (protos)"
-cd $SCRIPT_DIR/gen/proto
-tar cf $FW_DIR_TFCORE_HDRS/tmp.tar tensorflow
+echo "Headers, populating: eigen (unsupported)"
+cd $SCRIPT_DIR/downloads/eigen
+tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar unsupported
 cd $FW_DIR_TFCORE_HDRS
 tar xf tmp.tar
-# Don't include the auto downloaded/generated to build this library
-rm -rf tensorflow/contrib/makefile
 rm -f tmp.tar
+
+# ./downloads/eigen/ Eigen -> Eigen
+
+echo "Headers, populating: eigen"
+cd $SCRIPT_DIR/downloads/eigen
+tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar Eigen
+cd $FW_DIR_TFCORE_HDRS
+tar xf tmp.tar
+rm -f tmp.tar
+
+# ./downloads/absl/ absl
+
+echo "Headers, populating: absl"
+cd $SCRIPT_DIR/downloads/absl
+find absl -name "*.h" | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
+cd $FW_DIR_TFCORE_HDRS
+tar xf tmp.tar
+rm -f tmp.tar
+
+# ./downloads/protobuf/src/ google
 
 echo "Headers, populating: google (proto src)"
 cd $SCRIPT_DIR/downloads/protobuf/src
-tar cf $FW_DIR_TFCORE_HDRS/tmp.tar google
+find google -name "*.h" | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
 cd $FW_DIR_TFCORE_HDRS
 tar xf tmp.tar
 rm -f tmp.tar
 
+# ./gen/proto/ tensorflow
+
+echo "Headers, populating: tensorflow (protos)"
+cd $SCRIPT_DIR/gen/proto
+find tensorflow -name "*.h" | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
+cd $FW_DIR_TFCORE_HDRS
+tar xf tmp.tar
+rm -f tmp.tar
+
+# Don't include the auto downloaded/generated to build this library
+
+rm -rf tensorflow/contrib/makefile
+
 # This is required, otherwise they interfere with the documentation of the
 # pod at cocoapods.org
+
 echo "Remove all README files"
 cd $FW_DIR_TFCORE_HDRS
 find . -type f -name README\* -exec rm -f {} \;
 find . -type f -name readme\* -exec rm -f {} \;
 
+# Move to target location
+
 TARGET_GEN_LOCATION="$SCRIPT_DIR/gen/ios_frameworks"
 echo "Moving results to target: " $TARGET_GEN_LOCATION
 cd $FW_DIR
-zip -q -r tensorflow_experimental.framework.zip tensorflow_experimental.framework -x .DS_Store
+zip -q -r tensorflow.framework.zip tensorflow.framework -x .DS_Store
 rm -rf $TARGET_GEN_LOCATION
 mkdir -p $TARGET_GEN_LOCATION
-cp -r tensorflow_experimental.framework.zip $TARGET_GEN_LOCATION
+cp -r tensorflow.framework.zip $TARGET_GEN_LOCATION
 
 echo "Cleaning up"
 popd
