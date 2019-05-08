@@ -41,6 +41,7 @@ tensorflow/core/kernels/control_flow_ops.cc
 tensorflow/core/kernels/conv_grad_filter_ops.cc
 tensorflow/core/kernels/conv_grad_input_ops.cc
 tensorflow/core/kernels/conv_grad_ops.cc
+tensorflow/core/kernels/conv_grad_ops_3d.cc
 tensorflow/core/kernels/conv_ops.cc
 tensorflow/core/kernels/conv_ops_3d.cc
 tensorflow/core/kernels/conv_ops_fused.cc
@@ -110,6 +111,7 @@ tensorflow/core/kernels/dense_update_functor.cc
 tensorflow/core/kernels/dense_update_ops.cc
 tensorflow/core/kernels/depthtospace_op.cc
 tensorflow/core/kernels/depthwise_conv_op.cc
+tensorflow/core/kernels/depthwise_conv_grad_op.cc
 tensorflow/core/kernels/dequantize_op.cc
 tensorflow/core/kernels/dynamic_partition_op.cc
 tensorflow/core/kernels/dynamic_stitch_op.cc
@@ -266,6 +268,7 @@ tensorflow/core/kernels/strided_slice_op_inst_4.cc
 tensorflow/core/kernels/strided_slice_op_inst_5.cc
 tensorflow/core/kernels/strided_slice_op_inst_6.cc
 tensorflow/core/kernels/strided_slice_op_inst_7.cc
+tensorflow/core/kernels/strided_slice_op_define_grad.cc
 tensorflow/core/kernels/string_join_op.cc
 tensorflow/core/kernels/string_util.cc
 tensorflow/core/kernels/tensor_array.cc
