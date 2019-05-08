@@ -49,6 +49,9 @@ while getopts "a:g:T" opt_name; do
 done
 shift $((OPTIND - 1))
 
+# Build with android types full to ensure both int32 and float32 ops support
+# Note this significantly increases the build size
+export ANDROID_TYPES="-D__ANDROID_TYPES_FULL__"
 
 # Make sure we're in the correct directory, at the root of the source tree.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
