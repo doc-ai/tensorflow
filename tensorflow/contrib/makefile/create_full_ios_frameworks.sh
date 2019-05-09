@@ -42,8 +42,11 @@ cp $SCRIPT_DIR/../../../LICENSE \
 echo "Copying static libraries"
 cp $SCRIPT_DIR/gen/lib/libtensorflow-core.a \
    $FW_DIR_TFCORE/tensorflow
-cp $SCRIPT_DIR/gen/protobuf_ios/lib/libprotobuf.a \
-   $FW_DIR_TFCORE/libprotobuf
+
+# only copy tensorflow-core into the framework and require libprotobuf and nsync as additional dependencies?
+
+# cp $SCRIPT_DIR/gen/protobuf_ios/lib/libprotobuf.a \
+#   $FW_DIR_TFCORE/libprotobuf
 
 # Copy nsync (forget where this is built from and generated to)
 # ...
