@@ -140,7 +140,8 @@ class PackOp : public OpKernel {
 TF_CALL_ALL_TYPES(REGISTER_PACK);
 TF_CALL_QUANTIZED_TYPES(REGISTER_PACK);
 
-#if defined(IS_MOBILE_PLATFORM) && !defined(SUPPORT_SELECTIVE_REGISTRATION)
+#if defined(IS_MOBILE_PLATFORM) && !defined(SUPPORT_SELECTIVE_REGISTRATION) && !defined(__ANDROID_TYPES_FULL__)
+// If __ANDROID_TYPES_FULL__ is defined then TF_CALL_ALL_TYPES already calls REGISTER_PACK(string)
 // Primarily used for SavedModel support on mobile.
 REGISTER_PACK(string);
 #endif  // defined(IS_MOBILE_PLATFORM) &&
