@@ -1,9 +1,3 @@
-tensorflow/contrib/boosted_trees/ops/model_ops.cc
-tensorflow/contrib/boosted_trees/ops/prediction_ops.cc
-tensorflow/contrib/boosted_trees/ops/quantile_ops.cc
-tensorflow/contrib/boosted_trees/ops/split_handler_ops.cc
-tensorflow/contrib/boosted_trees/ops/stats_accumulator_ops.cc
-tensorflow/contrib/boosted_trees/ops/training_ops.cc
 tensorflow/core/kernels/aggregate_ops.cc
 tensorflow/core/kernels/argmax_op.cc
 tensorflow/core/kernels/avgpooling_op.cc
@@ -12,11 +6,6 @@ tensorflow/core/kernels/batch_norm_op.cc
 tensorflow/core/kernels/batchtospace_op.cc
 tensorflow/core/kernels/bcast_ops.cc
 tensorflow/core/kernels/bias_op.cc
-tensorflow/core/kernels/boosted_trees/prediction_ops.cc
-tensorflow/core/kernels/boosted_trees/resource_ops.cc
-tensorflow/core/kernels/boosted_trees/resources.cc
-tensorflow/core/kernels/boosted_trees/stats_ops.cc
-tensorflow/core/kernels/boosted_trees/training_ops.cc
 tensorflow/core/kernels/cast_op.cc
 tensorflow/core/kernels/cast_op_impl_bfloat.cc
 tensorflow/core/kernels/cast_op_impl_bool.cc
@@ -296,7 +285,6 @@ tensorflow/core/kernels/xsmm_conv2d.cc
 tensorflow/core/ops/array_grad.cc
 tensorflow/core/ops/array_ops.cc
 tensorflow/core/ops/audio_ops.cc
-tensorflow/core/ops/boosted_trees_ops.cc
 tensorflow/core/ops/candidate_sampling_ops.cc
 tensorflow/core/ops/control_flow_ops.cc
 tensorflow/core/ops/ctc_ops.cc
