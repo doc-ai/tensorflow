@@ -50,7 +50,7 @@ usage() {
   exit 1
 }
 
-BUILD_TARGET="i386 x86_64 armv7 armv7s arm64"
+BUILD_TARGET="i386 x86_64 arm64" # "i386 x86_64 armv7 armv7s arm64"
 while getopts "a:f:h:n:" opt_name; do
   case "$opt_name" in
     a) BUILD_TARGET="${OPTARG}";;
