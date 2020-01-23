@@ -182,7 +182,6 @@ tensorflow/core/kernels/save_op.cc
 tensorflow/core/kernels/save_restore_tensor.cc
 tensorflow/core/kernels/save_restore_v2_ops.cc
 tensorflow/core/kernels/segment_reduction_ops.cc
-tensorflow/core/kernels/segment_reduction_ops.cc
 tensorflow/core/kernels/sendrecv_ops.cc
 tensorflow/core/kernels/sequence_ops.cc
 tensorflow/core/kernels/session_ops.cc
