@@ -99,7 +99,7 @@ limitations under the License.
 
 #define TF_CALL_int8(m)
 #define TF_CALL_string(m) m(string)
-#define TF_CALL_resource(m)
+#define TF_CALL_resource(m) m(::tensorflow::ResourceHandle)
 #define TF_CALL_variant(m)
 #define TF_CALL_complex64(m)
 #define TF_CALL_int64(m) m(::tensorflow::int64)
@@ -129,7 +129,7 @@ limitations under the License.
 
 #define TF_CALL_int8(m)
 #define TF_CALL_string(m)
-#define TF_CALL_resource(m)
+#define TF_CALL_resource(m) m(::tensorflow::ResourceHandle)
 #define TF_CALL_variant(m)
 #define TF_CALL_complex64(m)
 #define TF_CALL_int64(m) m(::tensorflow::int64)
