@@ -112,6 +112,7 @@ tensorflow/core/kernels/fifo_queue.cc
 tensorflow/core/kernels/fifo_queue_op.cc
 tensorflow/core/kernels/fill_functor.cc
 tensorflow/core/kernels/function_ops.cc
+tensorflow/core/kernels/functional_ops.cc
 tensorflow/core/kernels/fused_batch_norm_op.cc
 tensorflow/core/kernels/gather_op.cc
 tensorflow/core/kernels/identity_n_op.cc
@@ -149,6 +150,7 @@ tensorflow/core/kernels/pack_op.cc
 tensorflow/core/kernels/pad_op.cc
 tensorflow/core/kernels/padding_fifo_queue.cc
 tensorflow/core/kernels/padding_fifo_queue_op.cc
+tensorflow/core/kernels/partitioned_function_ops.cc
 tensorflow/core/kernels/pooling_ops_3d.cc
 tensorflow/core/kernels/pooling_ops_common.cc
 tensorflow/core/kernels/population_count_op.cc
@@ -156,6 +158,7 @@ tensorflow/core/kernels/queue_base.cc
 tensorflow/core/kernels/queue_op.cc
 tensorflow/core/kernels/queue_ops.cc
 tensorflow/core/kernels/random_op.cc
+tensorflow/core/kernels/random_shuffle_op.cc
 tensorflow/core/kernels/reduction_ops_all.cc
 tensorflow/core/kernels/reduction_ops_any.cc
 tensorflow/core/kernels/reduction_ops_common.cc
@@ -204,6 +207,7 @@ tensorflow/core/kernels/sparse_fill_empty_rows_op.cc
 tensorflow/core/kernels/sparse_matmul_op.cc
 tensorflow/core/kernels/sparse_reshape_op.c
 tensorflow/core/kernels/sparse_to_dense_op.cc
+tensorflow/core/kernels/sparse_xent_op.cc
 tensorflow/core/kernels/spectrogram.cc
 tensorflow/core/kernels/spectrogram_op.cc
 tensorflow/core/kernels/split_lib_cpu.cc
