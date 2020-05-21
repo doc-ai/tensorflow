@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # Copyright 2017 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,9 +14,19 @@
 # limitations under the License.
 # ==============================================================================
 
+set -x
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/../../../.."
+TENSORFLOW_DIR="${SCRIPT_DIR}/../../../.."
 
-CC_PREFIX=aarch64-linux-gnu- make -j 3 -f tensorflow/lite/tools/make/Makefile TARGET=aarch64 TARGET_ARCH=armv8-a
+FREE_MEM="$(free -m | awk '/^Mem/ {print $2}')"
+# Use "-j 4" only memory is larger than 2GB
+if [[ "FREE_MEM" -gt "2000" ]]; then
+  NO_JOB=4
+else
+  NO_JOB=1
+fi
+
+make -j ${NO_JOB} TARGET=aarch64 -C "${TENSORFLOW_DIR}" -f tensorflow/lite/tools/make/Makefile $@
+

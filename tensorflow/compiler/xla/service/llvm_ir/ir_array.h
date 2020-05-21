@@ -43,12 +43,9 @@ namespace llvm_ir {
 // are supported.
 class IrArray {
  public:
-  // A multidimensional index into an IrArray. The index for dimension zero is
-  // first in the vector. This is the reverse order of the notation used for
-  // describing the dimensions of an array. That is, for a [4 x 3 x 2] array
-  // dimension zero has size 2, dimension one has size 3, and dimension two has
-  // size 4. Thus the index {1, 2, 3} indexes the last element of this [4 x 3 x
-  // 2] array.
+  // A multidimensional index into an IrArray. All the runtime indices
+  // (multidim) and dimensions (Shape::dimensions(), absl::Span<const int64>)
+  // are major-first.
   //
   // This may also keep a linear index and the layout and dimensions it was
   // emitted for; if the shape where this `Index` is used matches, the linear
@@ -111,6 +108,11 @@ class IrArray {
     bool ShapeIsCompatible(const Shape& a) const {
       Shape own_shape = ShapeUtil::MakeShape(a.element_type(), dims_);
       *own_shape.mutable_layout() = layout_;
+      // The shape 'a' could have dynamic dimensions set. Before we check for
+      // equality, we need to copy the information which dimensions are dynamic.
+      for (int64 i = 0; i < a.rank(); ++i) {
+        own_shape.set_dynamic_dimension(i, a.is_dynamic_dimension(i));
+      }
       return ShapeUtil::Equal(own_shape, a);
     }
 
@@ -133,9 +135,9 @@ class IrArray {
 
     // Given that "this" is the target index of a transpose from `operand_shape`
     // to `shape` with the given dimension mapping, returns the source index.
-    Index SourceIndexOfTranspose(const Shape& shape, const Shape& operand_shape,
-                                 absl::Span<const int64> dimension_mapping,
-                                 llvm::IRBuilder<>* builder) const;
+    Index SourceIndexOfTranspose(
+        const Shape& shape, const Shape& operand_shape,
+        absl::Span<const int64> dimension_mapping) const;
 
     // Given that "this" is the target index of a bitcast from `operand_shape`
     // to `shape`, returns the source index.
@@ -151,6 +153,10 @@ class IrArray {
     // Linearizes the index into the given shape, i.e. reshapes it to rank-1 and
     // returns the index into the sole dimension 0 of the new shape.
     llvm::Value* Linearize(absl::Span<const int64> dimensions,
+                           llvm::IRBuilder<>* builder) const;
+
+    // Linearizes the index into the given dynamic dimensions.
+    llvm::Value* Linearize(const std::vector<llvm::Value*>& dynamic_dims,
                            llvm::IRBuilder<>* builder) const;
 
     llvm::Type* GetType() const { return index_type_; }

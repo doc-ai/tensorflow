@@ -42,22 +42,22 @@ class DeviceDescription {
   // Returns the platform being run on; this value is primarily intended for
   // printing, and comes out something like "OpenCL 1.2" or "Compute Capability
   // 3.5".
-  const string &platform_version() const { return platform_version_; }
+  const std::string &platform_version() const { return platform_version_; }
 
   // Returns the driver version interfacing with the underlying platform. Vendor
   // dependent format.
-  const string &driver_version() const { return driver_version_; }
+  const std::string &driver_version() const { return driver_version_; }
 
   // Return the runtime version, if one is provided by the underlying platform.
   // Vendor dependent format / usefulness.
-  const string &runtime_version() const { return runtime_version_; }
+  const std::string &runtime_version() const { return runtime_version_; }
 
   // Returns the name that the device reports. Vendor dependent.
-  const string &name() const { return name_; }
+  const std::string &name() const { return name_; }
 
   // Returns the PCI bus identifier for this device, of the form
   // [domain]:[bus]:[device].[function]
-  const string &pci_bus_id() const { return pci_bus_id_; }
+  const std::string &pci_bus_id() const { return pci_bus_id_; }
 
   // Returns the NUMA node associated with this device, for use in
   // determining socket locality. If the NUMA node could not be determined, -1
@@ -77,10 +77,6 @@ class DeviceDescription {
   // respective dimensions. These limits may affect what constitutes a
   // legitimate kernel launch request.
   const BlockDim &block_dim_limit() const { return block_dim_limit_; }
-
-  // Returns the maximum number of simultaneously resident blocks
-  // on a multiprocessor.
-  int64 blocks_per_core_limit() const { return blocks_per_core_limit_; }
 
   // Returns the limit on the total number of threads that can be launched in a
   // single block; i.e. the limit on x * y * z dimensions of a ThreadDim.
@@ -130,7 +126,7 @@ class DeviceDescription {
 
   // Returns the device vendor string, e.g., "NVIDIA Corporation", "Advanced
   // Micro Devices, Inc.", or "GenuineIntel".
-  const string &device_vendor() const { return device_vendor_; }
+  const std::string &device_vendor() const { return device_vendor_; }
 
   // Returns the CUDA compute capability if we're running on the CUDA platform.
   // If a CUDA compute capability is not available, the major version will be
@@ -154,7 +150,7 @@ class DeviceDescription {
   // TODO(leary): resident blocks per core will be useful.
 
   // Convenience typedef for the string-based DeviceDescription mapping.
-  typedef std::map<string, string> Map;
+  typedef std::map<std::string, std::string> Map;
 
   // Returns a mapping from readable names to readable values that describe the
   // device. This is useful for things like printing.
@@ -173,17 +169,15 @@ class DeviceDescription {
   // above.
   //
   // N.B. If another field is added, update ToMap() above.
-  string device_vendor_;
-  string platform_version_;
-  string driver_version_;
-  string runtime_version_;
-  string pci_bus_id_;
-  string name_;
+  std::string device_vendor_;
+  std::string platform_version_;
+  std::string driver_version_;
+  std::string runtime_version_;
+  std::string pci_bus_id_;
+  std::string name_;
 
   ThreadDim thread_dim_limit_;
   BlockDim block_dim_limit_;
-
-  int64 blocks_per_core_limit_;
 
   int64 threads_per_core_limit_;
   int64 threads_per_block_limit_;
@@ -227,32 +221,30 @@ class DeviceDescriptionBuilder {
   // For descriptions of the following fields, see comments on the corresponding
   // DeviceDescription::* accessors above.
 
-  void set_device_vendor(const string &value) {
+  void set_device_vendor(const std::string &value) {
     device_description_->device_vendor_ = value;
   }
-  void set_platform_version(const string &value) {
+  void set_platform_version(const std::string &value) {
     device_description_->platform_version_ = value;
   }
-  void set_driver_version(const string &value) {
+  void set_driver_version(const std::string &value) {
     device_description_->driver_version_ = value;
   }
-  void set_runtime_version(const string &value) {
+  void set_runtime_version(const std::string &value) {
     device_description_->runtime_version_ = value;
   }
-  void set_pci_bus_id(const string &value) {
+  void set_pci_bus_id(const std::string &value) {
     device_description_->pci_bus_id_ = value;
   }
-  void set_name(const string &value) { device_description_->name_ = value; }
+  void set_name(const std::string &value) {
+    device_description_->name_ = value;
+  }
 
   void set_thread_dim_limit(const ThreadDim &value) {
     device_description_->thread_dim_limit_ = value;
   }
   void set_block_dim_limit(const BlockDim &value) {
     device_description_->block_dim_limit_ = value;
-  }
-
-  void set_blocks_per_core_limit(int64 value) {
-    device_description_->blocks_per_core_limit_ = value;
   }
 
   void set_threads_per_core_limit(int64 value) {

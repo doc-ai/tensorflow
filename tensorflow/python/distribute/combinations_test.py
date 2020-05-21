@@ -1,3 +1,4 @@
+# Lint as: python3
 # Copyright 2018 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,145 +13,139 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Tests for some testing utils from strategy_test_lib."""
+"""Tests for tensorflow.python.distribute.combinations."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from collections import OrderedDict
+import unittest
 
 from absl.testing import parameterized
 
 from tensorflow.python.distribute import combinations
-from tensorflow.python.eager import test
+from tensorflow.python.distribute.cluster_resolver import tfconfig_cluster_resolver
+from tensorflow.python.framework import combinations as framework_combinations
+from tensorflow.python.platform import test
 
 
-class TestingCombinationsTest(test.TestCase):
+class ClusterParametersTest(test.TestCase, parameterized.TestCase):
+  # For this test we need to use `framework.test_combinations` because our
+  # `generate` eats the cluster parameters.
+  #
+  # Note that we don't have a standalone combination for ClusterParameters, so
+  # we should use GPUCombination which contains it.
 
-  def test_combine(self):
-    self.assertEqual([{
-        "a": 1,
-        "b": 2
-    }, {
-        "a": 1,
-        "b": 3
-    }, {
-        "a": 2,
-        "b": 2
-    }, {
-        "a": 2,
-        "b": 3
-    }], combinations.combine(a=[1, 2], b=[2, 3]))
+  @framework_combinations.generate(
+      framework_combinations.combine(distribution=[
+          combinations.NamedDistribution(
+              "HasClusterParams", lambda: None, has_chief=True, num_workers=2),
+      ]),
+      test_combinations=(combinations.GPUCombination(),))
+  def testClusterParams(self, distribution, has_chief, num_workers):
+    self.assertTrue(has_chief)
+    self.assertEqual(num_workers, 2)
 
-  def test_arguments_sorted(self):
-    self.assertEqual([
-        OrderedDict([("aa", 1), ("ab", 2)]),
-        OrderedDict([("aa", 1), ("ab", 3)]),
-        OrderedDict([("aa", 2), ("ab", 2)]),
-        OrderedDict([("aa", 2), ("ab", 3)])
-    ], combinations.combine(ab=[2, 3], aa=[1, 2]))
+  @framework_combinations.generate(
+      framework_combinations.combine(distribution=[
+          combinations.NamedDistribution("NoClusterParams", lambda: None),
+      ]),
+      test_combinations=(combinations.GPUCombination(),))
+  def testClusterParamsHasDefault(self, distribution, has_chief, num_workers):
+    self.assertFalse(has_chief)
+    self.assertEqual(num_workers, 1)
 
-  def test_combine_single_parameter(self):
-    self.assertEqual([{
-        "a": 1,
-        "b": 2
-    }, {
-        "a": 2,
-        "b": 2
-    }], combinations.combine(a=[1, 2], b=2))
+  @framework_combinations.generate(
+      framework_combinations.combine(v=1),
+      test_combinations=(combinations.GPUCombination(),))
+  def testClusterParamsNoStrategy(self, v, has_chief, num_workers):
+    self.assertFalse(has_chief)
+    self.assertEqual(num_workers, 1)
 
-  def test_add(self):
-    self.assertEqual(
-        [{
-            "a": 1
-        }, {
-            "a": 2
-        }, {
-            "b": 2
-        }, {
-            "b": 3
-        }],
-        combinations.combine(a=[1, 2]) + combinations.combine(b=[2, 3]))
+  @framework_combinations.generate(
+      framework_combinations.combine(distribution=[
+          combinations.NamedDistribution(
+              "WithClusterParams", lambda: None, has_chief=True, num_workers=2),
+          combinations.NamedDistribution("WithoutClusterParams", lambda: None),
+      ]),
+      test_combinations=(combinations.GPUCombination(),))
+  def testClusterParamsAreOptional(self, distribution):
+    # If combinations library doesn't raise an exception, the test is passed.
+    pass
 
-  def test_times(self):
-    c1 = combinations.combine(mode=["graph"], loss=["callable", "tensor"])
-    c2 = combinations.combine(mode=["eager"], loss=["callable"])
-    c3 = combinations.combine(distribution=["d1", "d2"])
-    c4 = combinations.times(c3, c1 + c2)
-    self.assertEqual([
-        OrderedDict([("distribution", "d1"), ("loss", "callable"),
-                     ("mode", "graph")]),
-        OrderedDict([("distribution", "d1"), ("loss", "tensor"),
-                     ("mode", "graph")]),
-        OrderedDict([("distribution", "d1"), ("loss", "callable"),
-                     ("mode", "eager")]),
-        OrderedDict([("distribution", "d2"), ("loss", "callable"),
-                     ("mode", "graph")]),
-        OrderedDict([("distribution", "d2"), ("loss", "tensor"),
-                     ("mode", "graph")]),
-        OrderedDict([("distribution", "d2"), ("loss", "callable"),
-                     ("mode", "eager")])
-    ], c4)
-
-  def test_times_variable_arguments(self):
-    c1 = combinations.combine(mode=["graph", "eager"])
-    c2 = combinations.combine(optimizer=["adam", "gd"])
-    c3 = combinations.combine(distribution=["d1", "d2"])
-    c4 = combinations.times(c3, c1, c2)
-    self.assertEqual([
-        OrderedDict([("distribution", "d1"), ("mode", "graph"),
-                     ("optimizer", "adam")]),
-        OrderedDict([("distribution", "d1"), ("mode", "graph"),
-                     ("optimizer", "gd")]),
-        OrderedDict([("distribution", "d1"), ("mode", "eager"),
-                     ("optimizer", "adam")]),
-        OrderedDict([("distribution", "d1"), ("mode", "eager"),
-                     ("optimizer", "gd")]),
-        OrderedDict([("distribution", "d2"), ("mode", "graph"),
-                     ("optimizer", "adam")]),
-        OrderedDict([("distribution", "d2"), ("mode", "graph"),
-                     ("optimizer", "gd")]),
-        OrderedDict([("distribution", "d2"), ("mode", "eager"),
-                     ("optimizer", "adam")]),
-        OrderedDict([("distribution", "d2"), ("mode", "eager"),
-                     ("optimizer", "gd")])
-    ], c4)
-    self.assertEqual(
-        combinations.combine(
-            mode=["graph", "eager"],
-            optimizer=["adam", "gd"],
-            distribution=["d1", "d2"]), c4)
-
-  def test_overlapping_keys(self):
-    c1 = combinations.combine(mode=["graph"], loss=["callable", "tensor"])
-    c2 = combinations.combine(mode=["eager"], loss=["callable"])
-    with self.assertRaisesRegexp(ValueError, ".*Keys.+overlap.+"):
-      _ = combinations.times(c1, c2)
+  @framework_combinations.generate(
+      framework_combinations.combine(
+          ds1=combinations.NamedDistribution(
+              "Strategy1", lambda: None, has_chief=True, num_workers=0),
+          ds2=combinations.NamedDistribution(
+              "Strategy2", lambda: None, has_chief=False, num_workers=1),
+          ds3=combinations.NamedDistribution(
+              "Strategy3", lambda: None, has_chief=True, num_workers=0),
+      ),
+      test_combinations=(combinations.GPUCombination(),))
+  def testMultipleDistributionSingleWorker(self, ds1, ds2, ds3):
+    # If combinations library doesn't raise an exception, the test is passed.
+    pass
 
 
-@combinations.generate(combinations.combine(a=[1, 0], b=[2, 3], c=[1]))
-class CombineTheTestSuite(parameterized.TestCase):
+# unittest.expectedFailure doesn't work with parameterized test methods, so we
+# have to decorate the class instead.
+@unittest.expectedFailure
+class ClusterParametersShouldFailTest(test.TestCase, parameterized.TestCase):
 
-  def test_add_things(self, a, b, c):
-    self.assertLessEqual(3, a + b + c)
-    self.assertLessEqual(a + b + c, 5)
+  @framework_combinations.generate(
+      framework_combinations.combine(
+          ds1=combinations.NamedDistribution(
+              "Strategy1", lambda: None, has_chief=True, num_workers=2),
+          ds2=combinations.NamedDistribution(
+              "Strategy2", lambda: None, has_chief=True, num_workers=2),
+      ),
+      test_combinations=(combinations.GPUCombination(),))
+  def testMultipleDistributionMultiWorker(self, ds1, ds2):
+    # combinations library should raise an exception.
+    pass
 
-  def test_add_things_one_more(self, a, b, c):
-    self.assertLessEqual(3, a + b + c)
-    self.assertLessEqual(a + b + c, 5)
 
-  def not_a_test(self, a=0, b=0, c=0):
-    del a, b, c
-    self.fail()
+# Tests that we *actually* run the test method in multiple workers instead of
+# just passing silently. More importantly, it verifies that the test can fail.
+# Note that unittest.expectedFailure doesn't work with parameterized test
+# methods, so we have to decorate the class instead.
+@unittest.expectedFailure
+class CombinationsExpectedFailureTest(test.TestCase, parameterized.TestCase):
 
-  def _test_but_private(self, a=0, b=0, c=0):
-    del a, b, c
-    self.fail()
+  @combinations.generate(
+      combinations.combine(distribution=[
+          combinations.NamedDistribution(
+              "OneChiefOneWorker", lambda: None, has_chief=True, num_workers=1),
+          combinations.NamedDistribution(
+              "TwoWorkers", lambda: None, has_chief=False, num_workers=2),
+      ]))
+  def testMultiWorkerCanFail(self, distribution):
+    resolver = tfconfig_cluster_resolver.TFConfigClusterResolver()
+    # This should fail.
+    self.assertIsNone(resolver.task_id)
 
-  # Check that nothing funny happens to a non-callable that starts with "_test".
-  test_member = 0
+
+# Tests that we *actually* run the test method in multiple workers instead of
+# just passing silently. More importantly, it verifies that the test can fail.
+# Note that unittest.expectedFailure doesn't work with parameterized test
+# methods, so we have to decorate the class instead.
+@unittest.expectedFailure
+@combinations.generate(
+    combinations.combine(distribution=[
+        combinations.NamedDistribution(
+            "OneChiefOneWorker", lambda: None, has_chief=True, num_workers=1),
+        combinations.NamedDistribution(
+            "TwoWorkers", lambda: None, has_chief=False, num_workers=2),
+    ]))
+class CombinationsOnClassMultiWorkerExpectedFailureTest(test.TestCase,
+                                                        parameterized.TestCase):
+
+  def test(self, distribution):
+    resolver = tfconfig_cluster_resolver.TFConfigClusterResolver()
+    # This should fail.
+    self.assertIsNone(resolver.task_id)
 
 
 if __name__ == "__main__":
-  test.main()
+  combinations.main()

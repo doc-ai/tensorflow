@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/op.h"
@@ -25,6 +26,7 @@ limitations under the License.
 
 namespace tensorflow {
 namespace data {
+namespace experimental {
 namespace {
 
 static const double kPercentile = 90.0;
@@ -52,6 +54,8 @@ class WrapperDataset : public DatasetBase {
   }
 
   string DebugString() const override { return "WrapperDataset"; }
+
+  Status CheckExternalState() const override { return Status::OK(); }
 
  protected:
   Status AsGraphDefInternal(SerializationContext* ctx,
@@ -101,7 +105,8 @@ class WrapperDataset : public DatasetBase {
       return model::MakeKnownRatioNode(std::move(args), /*ratio=*/1.0);
     }
 
-    Status SaveInternal(IteratorStateWriter* writer) override {
+    Status SaveInternal(SerializationContext* ctx,
+                        IteratorStateWriter* writer) override {
       return Status::OK();
     }
 
@@ -129,15 +134,23 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
  public:
   explicit ChooseFastestBranchDatasetOp(OpKernelConstruction* ctx)
       : UnaryDatasetOpKernel(ctx) {
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("branches", &funcs_));
+    std::vector<NameAttrList> funcs;
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("branches", &funcs));
+    func_metadatas_.resize(funcs.size());
+    for (int i = 0; i < funcs.size(); ++i) {
+      OP_REQUIRES_OK(
+          ctx, FunctionMetadata::Create(ctx, std::move(funcs[i]), /*params=*/{},
+                                        &func_metadatas_[i]));
+    }
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_elements_per_branch",
                                      &num_elements_per_branch_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("output_types", &output_types_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("output_shapes", &output_shapes_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("other_arguments_lengths",
                                      &other_arguments_lengths_));
+
     OP_REQUIRES(
-        ctx, funcs_.size() == other_arguments_lengths_.size(),
+        ctx, func_metadatas_.size() == other_arguments_lengths_.size(),
         errors::InvalidArgument(
             "branches and other_arguments_lengths must have the same length."));
   }
@@ -159,34 +172,32 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
                                         "divisible by `ratio_denominator`."));
 
     std::vector<std::unique_ptr<CapturedFunction>> captured_funcs(
-        funcs_.size());
+        func_metadatas_.size());
     OpInputList inputs;
     OP_REQUIRES_OK(ctx, ctx->input_list("other_arguments", &inputs));
 
     // Keeps track of starting index into other_arguments for a given function.
     int index = 0;
-    for (int i = 0; i < funcs_.size(); ++i) {
+    for (int i = 0; i < func_metadatas_.size(); ++i) {
       std::vector<Tensor> captured_args;
       captured_args.reserve(other_arguments_lengths_[i]);
       int end_index = index + other_arguments_lengths_[i];
       for (; index < end_index; ++index) {
         captured_args.push_back(inputs[index]);
       }
-      OP_REQUIRES_OK(ctx, CapturedFunction::Create(
-                              funcs_[i], ctx, std::move(captured_args),
-                              /*params=*/{}, &captured_funcs[i]));
+      OP_REQUIRES_OK(ctx, CapturedFunction::Create(ctx, func_metadatas_[i],
+                                                   std::move(captured_args),
+                                                   &captured_funcs[i]));
     }
-    *output =
-        new Dataset(ctx, input, funcs_, std::move(captured_funcs),
-                    output_types_, output_shapes_, num_elements_per_branch_,
-                    ratio_numerator_, ratio_denominator_);
+    *output = new Dataset(ctx, input, std::move(captured_funcs), output_types_,
+                          output_shapes_, num_elements_per_branch_,
+                          ratio_numerator_, ratio_denominator_);
   }
 
  private:
   class Dataset : public DatasetBase {
    public:
     Dataset(OpKernelContext* ctx, DatasetBase* input,
-            const std::vector<NameAttrList>& funcs,
             std::vector<std::unique_ptr<CapturedFunction>> captured_funcs,
             const DataTypeVector& output_types,
             const std::vector<PartialTensorShape>& output_shapes,
@@ -194,7 +205,6 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
             int64 ratio_denominator)
         : DatasetBase(DatasetContext(ctx)),
           input_(input),
-          funcs_(funcs),
           captured_funcs_(std::move(captured_funcs)),
           output_types_(output_types),
           output_shapes_(output_shapes),
@@ -235,6 +245,13 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
       return static_cast<double>(n) * ratio_numerator_ / ratio_denominator_;
     }
 
+    Status CheckExternalState() const override {
+      for (const auto& captured_func : captured_funcs_) {
+        TF_RETURN_IF_ERROR(captured_func->CheckExternalState());
+      }
+      return input_->CheckExternalState();
+    }
+
    protected:
     Status AsGraphDefInternal(SerializationContext* ctx,
                               DatasetGraphDefBuilder* b,
@@ -255,23 +272,13 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
         num_captured_inputs += func->captured_inputs().size();
         other_arguments_lengths.push_back(func->captured_inputs().size());
       }
-      DataTypeVector other_arguments_types;
       std::vector<Node*> other_arguments;
+      DataTypeVector other_arguments_types;
       other_arguments_types.reserve(num_captured_inputs);
       other_arguments.reserve(num_captured_inputs);
-      for (const auto& func : captured_funcs_) {
-        for (const Tensor& t : func->captured_inputs()) {
-          Node* node;
-          DatasetBase* input;
-          Status s = GetDatasetFromVariantTensor(t, &input);
-          if (s.ok()) {
-            TF_RETURN_IF_ERROR(b->AddInputDataset(ctx, input, &node));
-          } else {
-            TF_RETURN_IF_ERROR(b->AddTensor(t, &node));
-          }
-          other_arguments.emplace_back(node);
-          other_arguments_types.emplace_back(t.dtype());
-        }
+      for (const auto& captured_func : captured_funcs_) {
+        TF_RETURN_IF_ERROR(captured_func->AddToGraph(ctx, b, &other_arguments,
+                                                     &other_arguments_types));
       }
 
       // Targuments
@@ -285,10 +292,12 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
 
       // branches
       AttrValue branches_attr;
-      b->BuildAttrValue(funcs_, &branches_attr);
-      for (const auto& func : funcs_) {
-        TF_RETURN_IF_ERROR(b->AddFunction(ctx, func.name()));
+      std::vector<NameAttrList> funcs;
+      funcs.resize(captured_funcs_.size());
+      for (int i = 0; i < captured_funcs_.size(); ++i) {
+        funcs[i] = captured_funcs_[i]->func();
       }
+      b->BuildAttrValue(funcs, &branches_attr);
 
       // other_arguments_lengths
       AttrValue other_arguments_lengths_attr;
@@ -319,15 +328,15 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
      public:
       explicit ChooseFastestIterator(const Params& params)
           : DatasetIterator<Dataset>(params),
-            instantiated_captured_funcs_(dataset()->funcs_.size()),
-            histograms_(dataset()->funcs_.size()) {}
+            instantiated_captured_funcs_(dataset()->captured_funcs_.size()),
+            histograms_(dataset()->captured_funcs_.size()) {}
 
       Status Initialize(IteratorContext* ctx) override {
         mutex_lock l(mu_);
         TF_RETURN_IF_ERROR(
-            dataset()->input_->MakeIterator(ctx, prefix(), &input_impl_));
+            dataset()->input_->MakeIterator(ctx, this, prefix(), &input_impl_));
 
-        for (int i = 0; i < dataset()->funcs_.size(); ++i) {
+        for (int i = 0; i < dataset()->captured_funcs_.size(); ++i) {
           TF_RETURN_IF_ERROR(dataset()->captured_funcs_[i]->Instantiate(
               ctx, &instantiated_captured_funcs_[i]));
         }
@@ -343,7 +352,7 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
                              bool* end_of_sequence) override {
         {  // Locking scope
           mutex_lock l(mu_);
-          if (branch_index_ < dataset()->funcs_.size()) {
+          if (branch_index_ < dataset()->captured_funcs_.size()) {
             // Still running experiments
             if (!current_iterator_) {
               TF_RETURN_IF_ERROR(MakeCurrentIterator(ctx, branch_index_,
@@ -385,9 +394,10 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
       // TODO(rachelim): Save and restore histogram state as well. Currently,
       // if an iterator is saved and restored, the histograms start recording
       // from scratch.
-      Status SaveInternal(IteratorStateWriter* writer) override {
+      Status SaveInternal(SerializationContext* ctx,
+                          IteratorStateWriter* writer) override {
         mutex_lock l(mu_);
-        TF_RETURN_IF_ERROR(SaveInput(writer, input_impl_));
+        TF_RETURN_IF_ERROR(SaveInput(ctx, writer, input_impl_));
         TF_RETURN_IF_ERROR(writer->WriteScalar(full_name("experiment_counter"),
                                                experiment_counter_));
         TF_RETURN_IF_ERROR(
@@ -395,7 +405,7 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
         TF_RETURN_IF_ERROR(
             writer->WriteScalar(full_name("fastest_index"), fastest_index_));
         if (current_iterator_) {
-          TF_RETURN_IF_ERROR(SaveInput(writer, current_iterator_));
+          TF_RETURN_IF_ERROR(SaveInput(ctx, writer, current_iterator_));
         } else {
           TF_RETURN_IF_ERROR(
               writer->WriteScalar(full_name("input_impl_empty"), ""));
@@ -416,7 +426,7 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
 
         // Restore state of `current_iterator_` if it exists.
         if (!reader->Contains(full_name("input_impl_empty"))) {
-          if (branch_index_ < dataset()->funcs_.size()) {
+          if (branch_index_ < dataset()->captured_funcs_.size()) {
             TF_RETURN_IF_ERROR(MakeCurrentIterator(ctx, branch_index_,
                                                    /*is_experiment=*/true));
           } else {
@@ -432,23 +442,27 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
       Status GetNextFromExperiment(IteratorContext* ctx,
                                    std::vector<Tensor>* out_tensors,
                                    bool* end_of_sequence)
-          EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+          TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
         DCHECK_GE(branch_index_, 0);
         DCHECK_LT(branch_index_, histograms_.size());
 
-        int64 start = Env::Default()->NowNanos();
+        int64 start = EnvTime::NowNanos();
         Status s =
             current_iterator_->GetNext(ctx, out_tensors, end_of_sequence);
 
-        histograms_[branch_index_].Add(
-            static_cast<double>(Env::Default()->NowNanos() - start));
+        if (experiment_counter_ > 0) {
+          // Ignore the first experiment when benchmarking. It may be an outlier
+          // due to session set up time and other overheads.
+          histograms_[branch_index_].Add(
+              static_cast<double>(EnvTime::NowNanos() - start));
+        }
         return s;
       }
 
       // Select the fastest input to use based on the histograms of timings
       // of the completed iterations. The input with the best 90th percentile
       // iteration time is selected.
-      void SelectFastestInputIndex() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+      void SelectFastestInputIndex() TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
         fastest_index_ = 0;
 
         VLOG(2) << "90.0 percentile iteration time:";
@@ -469,7 +483,7 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
 
       Status MakeCurrentIterator(IteratorContext* ctx, int64 branch_index,
                                  bool is_experiment)
-          EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+          TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
         DCHECK_GE(branch_index, 0);
         DCHECK_LT(branch_index, histograms_.size());
 
@@ -505,7 +519,7 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
             temp_dataset, wrapper_dataset_tensor_.get()));
 
         TF_RETURN_IF_ERROR(MakeIteratorFromInputElement(
-            ctx, {*wrapper_dataset_tensor_}, branch_index,
+            ctx, this, {*wrapper_dataset_tensor_}, branch_index,
             *instantiated_captured_funcs_[branch_index], prefix(),
             &current_iterator_));
 
@@ -513,23 +527,22 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
       }
 
       mutex mu_;
-      std::unique_ptr<IteratorBase> input_impl_ GUARDED_BY(mu_);
+      std::unique_ptr<IteratorBase> input_impl_ TF_GUARDED_BY(mu_);
       std::vector<std::unique_ptr<InstantiatedCapturedFunction>>
-          instantiated_captured_funcs_ GUARDED_BY(mu_);
+          instantiated_captured_funcs_ TF_GUARDED_BY(mu_);
 
       // For tracking the time taken for each input's iterations.
-      std::vector<histogram::Histogram> histograms_ GUARDED_BY(mu_);
+      std::vector<histogram::Histogram> histograms_ TF_GUARDED_BY(mu_);
       int64 fastest_index_ = -1;
       std::unique_ptr<Tensor> wrapper_dataset_tensor_;
       std::unique_ptr<IteratorBase> current_iterator_;
 
       // Keeps track of which (branch, experiment) the next iteration is on.
-      int64 branch_index_ GUARDED_BY(mu_) = 0;
-      int64 experiment_counter_ GUARDED_BY(mu_) = 0;
+      int64 branch_index_ TF_GUARDED_BY(mu_) = 0;
+      int64 experiment_counter_ TF_GUARDED_BY(mu_) = 0;
     };  // class Iterator
 
     const DatasetBase* const input_;
-    std::vector<NameAttrList> funcs_;
     const std::vector<std::unique_ptr<CapturedFunction>> captured_funcs_;
     const DataTypeVector output_types_;
     const std::vector<PartialTensorShape> output_shapes_;
@@ -541,9 +554,9 @@ class ChooseFastestBranchDatasetOp : public UnaryDatasetOpKernel {
   int64 ratio_numerator_;
   int64 ratio_denominator_;
   int64 num_elements_per_branch_;
+  std::vector<std::shared_ptr<FunctionMetadata>> func_metadatas_;
   DataTypeVector output_types_;
   std::vector<PartialTensorShape> output_shapes_;
-  std::vector<NameAttrList> funcs_;
   std::vector<int32> other_arguments_lengths_;
 };  // class ChooseFastestBranchDatasetOp
 
@@ -552,5 +565,6 @@ REGISTER_KERNEL_BUILDER(Name("ChooseFastestBranchDataset").Device(DEVICE_CPU),
                         ChooseFastestBranchDatasetOp);
 
 }  // namespace
+}  // namespace experimental
 }  // namespace data
 }  // namespace tensorflow

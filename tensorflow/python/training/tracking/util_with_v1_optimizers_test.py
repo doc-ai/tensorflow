@@ -125,10 +125,6 @@ class CheckpointingTests(test.TestCase):
     suffix = "/.ATTRIBUTES/VARIABLE_VALUE"
     expected_checkpoint_names = [
         name + suffix for name in expected_checkpoint_names]
-    # The Dense layers also save get_config() JSON
-    expected_checkpoint_names.extend(
-        ["model/_second/.ATTRIBUTES/OBJECT_CONFIG_JSON",
-         "model/_named_dense/.ATTRIBUTES/OBJECT_CONFIG_JSON"])
     named_variables = {v.name: v for v in named_variables}
     six.assertCountEqual(self, expected_checkpoint_names,
                          named_variables.keys())
@@ -223,9 +219,10 @@ class CheckpointingTests(test.TestCase):
     on_create_model = MyModel()
     on_create_optimizer = adam.AdamOptimizer(
         0.001,
-        # Preserve beta1_power and beta2_power when appying gradients so we can
+        # Preserve beta1_power and beta2_power when applying gradients so we can
         # test that they've been restored correctly.
-        beta1=1.0, beta2=1.0)
+        beta1=1.0,
+        beta2=1.0)
     on_create_root = trackable_utils.Checkpoint(
         optimizer=on_create_optimizer, model=on_create_model)
     # Deferred restoration
@@ -292,16 +289,17 @@ class CheckpointingTests(test.TestCase):
           functools.partial(model, input_value),
           global_step=root.optimizer_step)
 
-    for training_continuation in range(3):
-      strategy = mirrored_strategy.MirroredStrategy()
-      with strategy.scope():
+    strategy = mirrored_strategy.MirroredStrategy()
+    with strategy.scope():
+      for training_continuation in range(3):
         model = MyModel()
         optimizer = adam.AdamOptimizer(0.001)
         root = trackable_utils.Checkpoint(
-            optimizer=optimizer, model=model,
+            optimizer=optimizer,
+            model=model,
             optimizer_step=training_util.get_or_create_global_step())
-        root.restore(checkpoint_management.latest_checkpoint(
-            checkpoint_directory))
+        root.restore(
+            checkpoint_management.latest_checkpoint(checkpoint_directory))
 
         for _ in range(num_training_steps):
           strategy.extended.call_for_each_replica(
@@ -762,10 +760,10 @@ class TemplateTests(test.TestCase):
 
     save_template = template.make_template("s1", _templated)
     v1_save, _, v2_save, manual_scope, manual_scope_v = save_template()
-    six.assertCountEqual(
-        self,
-        [v1_save, v2_save, manual_scope, manual_scope_v, save_template],
-        trackable_utils.list_objects(save_template))
+    six.assertCountEqual(self, [
+        id(obj) for obj in
+        [v1_save, v2_save, manual_scope, manual_scope_v, save_template]
+    ], [id(obj) for obj in trackable_utils.list_objects(save_template)])
     manual_dep, = manual_scope._checkpoint_dependencies
     self.assertEqual("in_manual_scope", manual_dep.name)
     self.assertIs(manual_scope_v, manual_dep.ref)

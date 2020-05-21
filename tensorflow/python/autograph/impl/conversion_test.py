@@ -18,15 +18,21 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import gast
+import imp
+import sys
+import types
+import weakref
+
+import six
 
 from tensorflow.python.autograph import utils
+from tensorflow.python.autograph.core import config
 from tensorflow.python.autograph.core import converter
 from tensorflow.python.autograph.impl import api
 from tensorflow.python.autograph.impl import conversion
-from tensorflow.python.autograph.pyct import compiler
+from tensorflow.python.autograph.impl.testing import pybind_for_testing
+from tensorflow.python.eager import function
 from tensorflow.python.framework import constant_op
-from tensorflow.python.keras.engine import training
 from tensorflow.python.platform import test
 
 
@@ -37,166 +43,85 @@ class ConversionTest(test.TestCase):
         options=converter.ConversionOptions(recursive=True),
         autograph_module=api)
 
-  def test_is_whitelisted_for_graph(self):
+  def test_is_whitelisted(self):
 
     def test_fn():
       return constant_op.constant(1)
 
-    self.assertFalse(conversion.is_whitelisted_for_graph(test_fn))
-    self.assertTrue(conversion.is_whitelisted_for_graph(utils))
-    self.assertTrue(conversion.is_whitelisted_for_graph(constant_op.constant))
+    self.assertFalse(conversion.is_whitelisted(test_fn))
+    self.assertTrue(conversion.is_whitelisted(utils))
+    self.assertTrue(conversion.is_whitelisted(constant_op.constant))
 
-  def test_entity_to_graph_unsupported_types(self):
-    with self.assertRaises(NotImplementedError):
-      program_ctx = self._simple_program_ctx()
-      conversion.entity_to_graph('dummy', program_ctx, None, None)
+  def test_is_whitelisted_tensorflow_like(self):
 
-  def test_entity_to_graph_callable(self):
-    b = 2
-    def f(a):
-      return a + b
+    tf_like = imp.new_module('tensorflow_foo')
+    def test_fn():
+      pass
+    tf_like.test_fn = test_fn
+    test_fn.__module__ = tf_like
 
-    program_ctx = self._simple_program_ctx()
-    nodes, name, info = conversion.entity_to_graph(f, program_ctx, None, None)
-    fn_node, = nodes
-    self.assertIsInstance(fn_node, gast.FunctionDef)
-    self.assertEqual('tf__f', name)
-    self.assertIs(info.namespace['b'], b)
+    self.assertFalse(conversion.is_whitelisted(tf_like.test_fn))
 
-  def test_entity_to_graph_function_with_defaults(self):
-    b = 2
-    c = 1
-    def f(a, d=c + 1):
-      return a + b + d
+  def test_is_whitelisted_callable_whitelisted_call(self):
 
-    program_ctx = self._simple_program_ctx()
-    nodes, name, _ = conversion.entity_to_graph(f, program_ctx, None, None)
-    fn_node, = nodes
-    self.assertIsInstance(fn_node, gast.FunctionDef)
-    self.assertEqual('tf__f', name)
-    self.assertEqual(
-        compiler.ast_to_source(fn_node.args.defaults[0]).strip(), 'None')
+    whitelisted_mod = imp.new_module('test_whitelisted_call')
+    sys.modules['test_whitelisted_call'] = whitelisted_mod
+    config.CONVERSION_RULES = ((config.DoNotConvert('test_whitelisted_call'),) +
+                               config.CONVERSION_RULES)
 
-  def test_entity_to_graph_call_tree(self):
+    class TestClass(object):
 
-    def g(a):
-      return a
+      def __call__(self):
+        pass
 
-    def f(a):
-      return g(a)
+      def whitelisted_method(self):
+        pass
 
-    program_ctx = self._simple_program_ctx()
-    nodes, _, _ = conversion.entity_to_graph(f, program_ctx, None, None)
-    f_node, = nodes
-    self.assertEqual('tf__f', f_node.name)
+    TestClass.__module__ = 'test_whitelisted_call'
+    if six.PY2:
+      TestClass.__call__.__func__.__module__ = 'test_whitelisted_call'
+    else:
+      TestClass.__call__.__module__ = 'test_whitelisted_call'
 
-  def test_entity_to_graph_class_hierarchy(self):
+    class Subclass(TestClass):
 
-    class TestBase(object):
+      def converted_method(self):
+        pass
 
-      def __init__(self, x='base'):
-        self.x = x
+    tc = Subclass()
 
-      def foo(self):
-        return self.x
+    self.assertTrue(conversion.is_whitelisted(TestClass.__call__))
+    self.assertTrue(conversion.is_whitelisted(tc))
+    self.assertTrue(conversion.is_whitelisted(tc.__call__))
+    self.assertTrue(conversion.is_whitelisted(tc.whitelisted_method))
+    self.assertFalse(conversion.is_whitelisted(Subclass))
+    self.assertFalse(conversion.is_whitelisted(tc.converted_method))
 
-      def bar(self):
-        return self.x
+  def test_is_whitelisted_tfmethodwrapper(self):
+    class TestClass(object):
 
-    class TestSubclass(TestBase):
+      def member_function(self):
+        pass
 
-      def __init__(self, y):
-        super(TestSubclass, self).__init__('sub')
-        self.y = y
+    TestClass.__module__ = 'test_whitelisted_call'
+    test_obj = TestClass()
 
-      def foo(self):
-        return self.y
+    def test_fn(self):
+      del self
 
-      def baz(self):
-        return self.y
+    bound_method = types.MethodType(
+        test_fn,
+        function.TfMethodTarget(
+            weakref.ref(test_obj), test_obj.member_function))
 
-    program_ctx = self._simple_program_ctx()
-    with self.assertRaisesRegex(NotImplementedError, 'classes.*whitelisted'):
-      conversion.entity_to_graph(TestSubclass, program_ctx, None, None)
+    self.assertTrue(conversion.is_whitelisted(bound_method))
 
-  def test_entity_to_graph_class_hierarchy_whitelisted(self):
-
-    class TestSubclass(training.Model):
-
-      def __init__(self, y):
-        super(TestSubclass, self).__init__()
-        self.built = False
-
-      def call(self, x):
-        return 3 * x
-
-    program_ctx = self._simple_program_ctx()
-    (import_node, class_node), name, _ = conversion.entity_to_graph(
-        TestSubclass, program_ctx, None, None)
-    self.assertEqual(import_node.names[0].name, 'Model')
-    self.assertEqual(name, 'TfTestSubclass')
-    self.assertEqual(class_node.name, 'TfTestSubclass')
-
-  def test_entity_to_graph_lambda(self):
-    b = 2
-    f = lambda x: b * x if x > 0 else -x
-
-    program_ctx = self._simple_program_ctx()
-    (fn_node,), name, entity_info = conversion.entity_to_graph(
-        f, program_ctx, None, None)
-    self.assertIsInstance(fn_node, gast.Assign)
-    self.assertIsInstance(fn_node.value, gast.Lambda)
-    self.assertEqual('tf__lambda', name)
-    self.assertIs(entity_info.namespace['b'], b)
-
-  def test_entity_to_graph_multiple_lambdas(self):
-    a, b = 1, 2
-    f, _ = (lambda x: a * x, lambda y: b * y)
-
-    program_ctx = self._simple_program_ctx()
-    (fn_node,), name, entity_info = conversion.entity_to_graph(
-        f, program_ctx, None, None)
-    self.assertIsInstance(fn_node, gast.Assign)
-    self.assertIsInstance(fn_node.value, gast.Lambda)
-    self.assertEqual('tf__lambda', name)
-    self.assertIs(entity_info.namespace['a'], a)
-
-  def test_entity_to_graph_multiple_lambdas_ambiguous_definitions(self):
-    a, b = 1, 2
-    f, _ = (lambda x: a * x, lambda x: b * x)
-
-    program_ctx = self._simple_program_ctx()
-    with self.assertRaises(ValueError):
-      conversion.entity_to_graph(f, program_ctx, None, None)
-
-  def test_entity_to_graph_lambda_code_with_garbage(self):
-    # pylint:disable=g-long-lambda
-    f = (  # intentional wrap
-        lambda x: (x  # intentional wrap
-                   + 1),)[0]
-    # pylint:enable=g-long-lambda
-
-    program_ctx = self._simple_program_ctx()
-    (fn_node,), name, _ = conversion.entity_to_graph(f, program_ctx, None, None)
-    self.assertIsInstance(fn_node, gast.Assign)
-    self.assertIsInstance(fn_node.value, gast.Lambda)
-    self.assertEqual('tf__lambda', name)
-
-  def test_entity_to_graph_nested_functions(self):
-    b = 2
-
-    def f(x):
-      def g(x):
-        return b * x
-      return g(x)
-
-    program_ctx = self._simple_program_ctx()
-    (fn_node,), name, entity_info = conversion.entity_to_graph(
-        f, program_ctx, None, None)
-    self.assertIsInstance(fn_node, gast.FunctionDef)
-    self.assertEqual(fn_node.name, 'tf__f')
-    self.assertEqual('tf__f', name)
-    self.assertIs(entity_info.namespace['b'], b)
+  def test_is_whitelisted_pybind(self):
+    test_object = pybind_for_testing.TestClassDef()
+    with test.mock.patch.object(config, 'CONVERSION_RULES', ()):
+      # TODO(mdan): This should return True for functions and methods.
+      # Note: currently, native bindings are whitelisted by a separate check.
+      self.assertFalse(conversion.is_whitelisted(test_object.method))
 
 
 if __name__ == '__main__':

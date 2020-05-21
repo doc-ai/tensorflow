@@ -23,6 +23,7 @@ import numpy as np
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.client import session
+from tensorflow.python.eager import def_function as eager_def_function
 from tensorflow.python.eager import function as eager_function
 from tensorflow.python.data.ops import iterator_ops
 from tensorflow.python.framework import constant_op
@@ -608,6 +609,31 @@ class FunctionalOpsTest(test.TestCase):
           self.assertAllEqual(Run(sess, 20.), 210.)
           self.assertAllEqual(Run(sess, 100.), 5050.)
 
+  def testToBool(self):
+    # For 0D tensors, the truthiness depends on whether the value is "zero".
+    self.assertAllEqual(gen_functional_ops.to_bool(0), False)
+    self.assertAllEqual(gen_functional_ops.to_bool(1), True)
+    self.assertAllEqual(gen_functional_ops.to_bool(42), True)
+    self.assertAllEqual(gen_functional_ops.to_bool(0.), False)
+    self.assertAllEqual(gen_functional_ops.to_bool(1.), True)
+    self.assertAllEqual(gen_functional_ops.to_bool(42.), True)
+    self.assertAllEqual(gen_functional_ops.to_bool(False), False)
+    self.assertAllEqual(gen_functional_ops.to_bool(True), True)
+    # For strings, "zero" is the empty string.
+    self.assertAllEqual(gen_functional_ops.to_bool(""), False)
+    self.assertAllEqual(gen_functional_ops.to_bool("a"), True)
+
+    # For >0D tensors, the truthiness only depends on whether there are
+    # elements or not.
+    self.assertAllEqual(gen_functional_ops.to_bool([]), False)
+    self.assertAllEqual(gen_functional_ops.to_bool([[]]), False)
+    self.assertAllEqual(gen_functional_ops.to_bool([[[]]]), False)
+    self.assertAllEqual(gen_functional_ops.to_bool([0]), True)
+    self.assertAllEqual(gen_functional_ops.to_bool([1]), True)
+    self.assertAllEqual(gen_functional_ops.to_bool([[0]]), True)
+    self.assertAllEqual(gen_functional_ops.to_bool([False]), True)
+    self.assertAllEqual(gen_functional_ops.to_bool([True]), True)
+
   # Like above, but using int32 in order to ensure that int32 tensors don't get
   # copied to the GPU during the application of the while.
   def testWhileInt32(self):
@@ -891,6 +917,8 @@ class FunctionalOpsTest(test.TestCase):
     self._testForMLP(False)
 
   @test_util.run_deprecated_v1
+  @test_util.disable_xla(
+      "Test uses strided slice without compile time constant values")
   def testForMLPWhile(self):
     self._testForMLP(True)
 
@@ -942,6 +970,35 @@ class FunctionalOpsTest(test.TestCase):
 # TODO(akshayka): Replace `function.Defun` with tf.contrib.eager.defun` in the
 # below test cases.
 class PartitionedCallTest(test.TestCase):
+
+  @test_util.run_deprecated_v1
+  def testRemoteDeviceInPartitionedCallOp(self):
+    workers, _ = test_util.create_local_cluster(2, 0)
+
+    worker0_device = "/job:worker/replica:0/task:0/cpu:0"
+    worker1_device = "/job:worker/replica:0/task:1/cpu:0"
+
+    @eager_def_function.function
+    def f(a, b):
+      return a + b
+
+    with session.Session(workers[0].target) as sess:
+      with ops.device(worker0_device):
+        a = variable_scope.get_variable(
+            "a", initializer=constant_op.constant(1.), use_resource=True)
+      with ops.device(worker1_device):
+        b = variable_scope.get_variable(
+            "b", initializer=constant_op.constant(1.), use_resource=True)
+
+      sess.run(variables.global_variables_initializer())
+
+    config = config_pb2.ConfigProto()
+    config.share_cluster_devices_in_session = True
+
+    with session.Session(workers[0].target, config=config) as sess:
+      res = sess.run(f(a, b))
+
+    self.assertEqual(res, 2)
 
   @test_util.run_deprecated_v1
   def testBasicSingleDevice(self):
@@ -1147,6 +1204,84 @@ class FunctionalOpsCaseTest(test.TestCase):
     self.assertAllEqual(np.float32(4), self.evaluate(f(-1, one)))  # <0 default
     self.assertAllEqual(np.float32(4), self.evaluate(f(6, one)))  # >=N default
 
+  @test_util.run_deprecated_v1
+  @test_util.disable_xla("Don't lower for XLA")
+  def testSkipEagerCaseLoweringPreservesNameForFetch(self):
+    for use_gpu in (True, False):
+      def Run(branch, x, fetch_by_name, use_gpu=use_gpu):
+        with ops.Graph().as_default() as g:
+          @function.Defun(dtypes.float32)
+          def two(x):
+            return -1, x * 2
+
+          @function.Defun(dtypes.float32)
+          def three(x):
+            return 0, x * 3
+
+          @function.Defun(dtypes.float32)
+          def four(x):
+            return 1, x * 4
+
+          outputs = gen_functional_ops.case(branch, input=[x],
+                                            Tout=[dtypes.int32, dtypes.float32],
+                                            branches=[two, three, four],
+                                            name="my_case")
+
+          # `outputs` is the list of output tensors of the Case op. We
+          # arbitrarily choose the 0th tensor to get the Case op and set the
+          # lowering attribute on it.
+          outputs[0].op._set_attr("_lower_using_switch_merge",
+                                  attr_value_pb2.AttrValue(b=True))
+          outputs = array_ops.identity_n(outputs)
+        with self.session(graph=g, use_gpu=use_gpu) as sess:
+          return sess.run("my_case:1" if fetch_by_name else outputs[1])
+
+      self.assertAllEqual(2 * 1., Run(0, 1., False))
+      self.assertAllEqual(2 * 1., Run(0, 1., True))
+      self.assertAllEqual(3 * 7., Run(1, 7., False))
+      self.assertAllEqual(3 * 7., Run(1, 7., True))
+      self.assertAllEqual(4 * -3., Run(2, -3., False))
+      self.assertAllEqual(4 * -3., Run(2, -3., True))
+      self.assertAllEqual(4 * -4., Run(7, -4., False))  # >= N default
+      self.assertAllEqual(4 * -4., Run(7, -4., True))  # >= N default
+      self.assertAllEqual(4 * -5., Run(-1, -5., False))  # <0 default
+      self.assertAllEqual(4 * -5., Run(-1, -5., True))  # <0 default
+
+  @test_util.disable_xla("Don't lower for XLA")
+  def testCaseLowering(self):
+    for use_gpu in (True, False):
+      @eager_function.defun
+      def Run(branch, x):
+        @function.Defun(dtypes.float32)
+        def two(x):
+          return -1, x * 2
+
+        @function.Defun(dtypes.float32)
+        def three(x):
+          return 0, x * 3
+
+        @function.Defun(dtypes.float32)
+        def four(x):
+          return 1, x * 4
+
+        outputs = gen_functional_ops.case(branch, input=[x],
+                                          Tout=[dtypes.int32, dtypes.float32],
+                                          branches=[two, three, four])
+
+        # `outputs` is the list of output tensors of the Case op. We
+        # arbitrarily choose the 0th tensor to get the Case op and set the
+        # lowering attribute on it.
+        outputs[0].op._set_attr("_lower_using_switch_merge",
+                                attr_value_pb2.AttrValue(b=True))
+        outputs = array_ops.identity_n(outputs)
+        return outputs[1]
+
+      with ops.device(test.gpu_device_name() if use_gpu else "CPU:0"):
+        self.assertAllEqual(2 * 1., self.evaluate(Run(0, 1.)))
+        self.assertAllEqual(3 * 7., self.evaluate(Run(1, 7.)))
+        self.assertAllEqual(4 * -3., self.evaluate(Run(2, -3.)))
+        self.assertAllEqual(4 * -4., self.evaluate(Run(7, -4.)))  # >=N default
+        self.assertAllEqual(4 * -5., self.evaluate(Run(-1, -5.)))  # <0 default
 
 if __name__ == "__main__":
   test.main()

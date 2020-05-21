@@ -15,7 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_PROFILER_INTERNAL_PROFILER_INTERFACE_H_
 #define TENSORFLOW_CORE_PROFILER_INTERNAL_PROFILER_INTERFACE_H_
 
-#include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/platform/status.h"
+#include "tensorflow/core/profiler/protobuf/xplane.pb.h"
 #include "tensorflow/core/protobuf/config.pb.h"
 
 namespace tensorflow {
@@ -39,8 +40,15 @@ class ProfilerInterface {
   // Stops profiling.
   virtual Status Stop() = 0;
 
-  // Moves collected profile data into run_metadata.
+  // Saves collected profile data into run_metadata.
+  // After this or the overload below are called once, subsequent calls might
+  // return empty data.
   virtual Status CollectData(RunMetadata* run_metadata) = 0;
+
+  // Saves collected profile data into XSpace.
+  // After this or the overload above are called once, subsequent calls might
+  // return empty data.
+  virtual Status CollectData(XSpace* space) = 0;
 };
 
 }  // namespace profiler

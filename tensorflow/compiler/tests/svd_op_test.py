@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import itertools
+
 from absl.testing import parameterized
 import numpy as np
 
@@ -46,7 +47,7 @@ class SvdOpTest(xla_test.XLATestCase, parameterized.TestCase):
     x_np = np.random.uniform(low=-1.0, high=1.0, size=shape).astype(dtype)
     m, n = shape[-2], shape[-1]
     _, s_np, _ = np.linalg.svd(x_np)
-    with self.cached_session() as sess:
+    with self.session() as sess:
       x_tf = array_ops.placeholder(dtype)
       with self.test_scope():
         s, u, v = linalg_ops.svd(x_tf, full_matrices=True)

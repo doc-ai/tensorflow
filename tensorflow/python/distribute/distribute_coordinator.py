@@ -128,7 +128,7 @@ class _WorkerContext(object):
         replicated training.
       task_id: an integer indicating id of the corresponding task. It can be
         None if it is local training or in-graph replicated training.
-      session_config: an optional `tf.ConfigProto` object.
+      session_config: an optional `tf.compat.v1.ConfigProto` object.
       rpc_layer: optional string specifying the RPC protocol for communication
         with worker masters. If None or empty, hosts in the `cluster_spec` will
         be used directly.
@@ -284,12 +284,12 @@ class _WorkerContext(object):
 
   @property
   def task_type(self):
-    """Returns the role of the corresponing task."""
+    """Returns the role of the corresponding task."""
     return self._task_type
 
   @property
   def task_id(self):
-    """Returns the id or index of the corresponing task."""
+    """Returns the id or index of the corresponding task."""
     return self._task_id
 
   @property
@@ -364,7 +364,7 @@ def _split_cluster_for_evaluator(cluster_spec, task_type):
   """Split the cluster for evaluator since it needn't talk to other tasks."""
   # Splitting the cluster is important to prevent the evaluator from talking to
   # other tasks in the cluster. Since we allow evaluator not to use
-  # distribution strategies and as a result ops in the evalauator task may have
+  # distribution strategies and as a result ops in the evaluator task may have
   # unspecified devices. Those ops may end up on other tasks if we don't split
   # the cluster.
   # Note: if you bypass distribute coordinator and bring the cluster yourself,
@@ -578,11 +578,11 @@ def run_standard_tensorflow_server(session_config=None):
   "grpc".
 
   Args:
-    session_config: an optional `tf.ConfigProto` object. Users can pass in
-      the session config object to configure server-local devices.
+    session_config: an optional `tf.compat.v1.ConfigProto` object. Users can
+      pass in the session config object to configure server-local devices.
 
   Returns:
-    a `tf.train.Server` object which has already been started.
+    a `tf.distribute.Server` object which has already been started.
 
   Raises:
     ValueError: if the "TF_CONFIG" environment is not complete.
@@ -694,7 +694,7 @@ def run_distribute_coordinator(worker_fn,
   operations.
 
   This method is intended to be invoked by high-level APIs so that users don't
-  have to explictly call it to run this coordinator. For those who don't use
+  have to explicitly call it to run this coordinator. For those who don't use
   high-level APIs, to change a program to use this coordinator, wrap everything
   in a the program after global data definitions such as commandline flag
   definition into the `worker_fn` and get task-specific configurations from
@@ -736,8 +736,8 @@ def run_distribute_coordinator(worker_fn,
       in a cluster. If not set or empty, fall back to local training.
     task_type: the current task type, optional if this is a client.
     task_id: the current task id, optional if this is a client.
-    session_config: an optional `tf.ConfigProto` object which will be passed
-      to `strategy`'s `configure` method and used to create a session.
+    session_config: an optional `tf.compat.v1.ConfigProto` object which will be
+      passed to `strategy`'s `configure` method and used to create a session.
     rpc_layer: optional string, the protocol for RPC, e.g. "grpc".
 
   Raises:
@@ -750,6 +750,9 @@ def run_distribute_coordinator(worker_fn,
     otherwise.
   """
   tf_config = json.loads(os.environ.get("TF_CONFIG", "{}"))
+  rpc_layer = tf_config.get("rpc_layer", rpc_layer)
+  environment = tf_config.get("environment", None)
+
   if not cluster_spec:
     cluster_spec = tf_config.get("cluster", {})
     task_env = tf_config.get("task", {})
@@ -758,11 +761,15 @@ def run_distribute_coordinator(worker_fn,
       task_id = int(task_env.get("index", task_id))
 
   if cluster_spec:
-    cluster_spec = multi_worker_util.normalize_cluster_spec(cluster_spec)
     # TODO(yuefengz): validate cluster_spec.
-
-  rpc_layer = tf_config.get("rpc_layer", rpc_layer)
-  environment = tf_config.get("environment", None)
+    cluster_spec = multi_worker_util.normalize_cluster_spec(cluster_spec)
+  elif hasattr(strategy.extended, "_cluster_resolver"):
+    cluster_resolver = strategy.extended._cluster_resolver  # pylint: disable=protected-access
+    task_type = cluster_resolver.task_type
+    task_id = cluster_resolver.task_id
+    rpc_layer = cluster_resolver.rpc_layer or rpc_layer
+    environment = cluster_resolver.environment
+    cluster_spec = cluster_resolver.cluster_spec()
 
   # Setting the session config is necessary for some strategies such as
   # CollectiveAllReduceStrategy.

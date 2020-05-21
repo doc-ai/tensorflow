@@ -26,17 +26,22 @@ import numpy as np
 from tensorflow.python import keras
 from tensorflow.python import tf2
 from tensorflow.python.client import session as session_lib
+from tensorflow.python.eager import backprop
 from tensorflow.python.eager import context
 from tensorflow.python.eager import def_function
-from tensorflow.python.feature_column import feature_column_v2
+from tensorflow.python.feature_column import feature_column_lib
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_spec
+from tensorflow.python.framework import test_util
 from tensorflow.python.keras import backend as K
+from tensorflow.python.keras import combinations
 from tensorflow.python.keras import keras_parameterized
 from tensorflow.python.keras import testing_utils
 from tensorflow.python.keras.engine import sequential
+from tensorflow.python.keras.optimizer_v2 import gradient_descent
 from tensorflow.python.keras.saving import saving_utils
 from tensorflow.python.ops import array_ops
 from tensorflow.python.platform import test
@@ -72,7 +77,10 @@ class TraceModelCallTest(keras_parameterized.TestCase):
 
     fn = saving_utils.trace_model_call(model)
     signature_outputs = fn(inputs)
-    expected_outputs = {model.output_names[0]: model(inputs)}
+    if model.output_names:
+      expected_outputs = {model.output_names[0]: model(inputs)}
+    else:
+      expected_outputs = {'output_1': model(inputs)}
 
     self._assert_all_close(expected_outputs, signature_outputs)
 
@@ -81,15 +89,23 @@ class TraceModelCallTest(keras_parameterized.TestCase):
   def test_trace_model_outputs_after_fitting(self):
     input_dim = 5 if testing_utils.get_model_type() == 'functional' else None
     model = testing_utils.get_small_mlp(10, 3, input_dim)
-    model.compile(optimizer='sgd', loss='mse')
-    model.fit(x=np.random.random((8, 5)),
-              y=np.random.random((8, 3)), epochs=2)
+    model.compile(
+        optimizer='sgd',
+        loss='mse',
+        run_eagerly=testing_utils.should_run_eagerly())
+    model.fit(
+        x=np.random.random((8, 5)).astype(np.float32),
+        y=np.random.random((8, 3)).astype(np.float32),
+        epochs=2)
 
     inputs = array_ops.ones((8, 5))
 
     fn = saving_utils.trace_model_call(model)
     signature_outputs = fn(inputs)
-    expected_outputs = {model.output_names[0]: model(inputs)}
+    if model.output_names:
+      expected_outputs = {model.output_names[0]: model(inputs)}
+    else:
+      expected_outputs = {'output_1': model(inputs)}
 
     self._assert_all_close(expected_outputs, signature_outputs)
 
@@ -118,7 +134,10 @@ class TraceModelCallTest(keras_parameterized.TestCase):
                                    'input shapes have not been set'):
         saving_utils.trace_model_call(model)
 
-    model.compile(optimizer='sgd', loss='mse')
+    model.compile(
+        optimizer='sgd',
+        loss='mse',
+        run_eagerly=testing_utils.should_run_eagerly())
     model.fit(x=[np.random.random((8, input_dim)).astype(np.float32),
                  np.random.random((8, input_dim)).astype(np.float32)],
               y=[np.random.random((8, num_classes)).astype(np.float32),
@@ -128,25 +147,29 @@ class TraceModelCallTest(keras_parameterized.TestCase):
     fn = saving_utils.trace_model_call(model)
     signature_outputs = fn([input_a_np, input_b_np])
     outputs = model([input_a_np, input_b_np])
-    expected_outputs = {model.output_names[0]: outputs[0],
-                        model.output_names[1]: outputs[1]}
-
+    if model.output_names:
+      expected_outputs = {
+          model.output_names[0]: outputs[0],
+          model.output_names[1]: outputs[1]
+      }
+    else:
+      expected_outputs = {'output_1': outputs[0], 'output_2': outputs[1]}
     self._assert_all_close(expected_outputs, signature_outputs)
 
-  @keras_parameterized.run_all_keras_modes
+  @combinations.generate(combinations.combine(mode=['graph', 'eager']))
   def test_trace_features_layer(self):
-    columns = [feature_column_v2.numeric_column('x')]
-    model = sequential.Sequential(
-        [feature_column_v2.DenseFeatures(columns)])
+    columns = [feature_column_lib.numeric_column('x')]
+    model = sequential.Sequential([feature_column_lib.DenseFeatures(columns)])
     model_input = {'x': constant_op.constant([[1.]])}
     model.predict(model_input, steps=1)
     fn = saving_utils.trace_model_call(model)
     self.assertAllClose({'output_1': [[1.]]}, fn({'x': [[1.]]}))
 
-    columns = [feature_column_v2.numeric_column('x'),
-               feature_column_v2.numeric_column('y')]
-    model = sequential.Sequential(
-        [feature_column_v2.DenseFeatures(columns)])
+    columns = [
+        feature_column_lib.numeric_column('x'),
+        feature_column_lib.numeric_column('y')
+    ]
+    model = sequential.Sequential([feature_column_lib.DenseFeatures(columns)])
     model_input = {'x': constant_op.constant([[1.]]),
                    'y': constant_op.constant([[2.]])}
     model.predict(model_input, steps=1)
@@ -154,7 +177,7 @@ class TraceModelCallTest(keras_parameterized.TestCase):
     self.assertAllClose({'output_1': [[1., 2.]]},
                         fn({'x': [[1.]], 'y': [[2.]]}))
 
-  @keras_parameterized.run_all_keras_modes
+  @combinations.generate(combinations.combine(mode=['graph', 'eager']))
   def test_specify_input_signature(self):
     model = testing_utils.get_small_sequential_mlp(10, 3, None)
     inputs = array_ops.ones((8, 5))
@@ -165,10 +188,13 @@ class TraceModelCallTest(keras_parameterized.TestCase):
     fn = saving_utils.trace_model_call(
         model, [tensor_spec.TensorSpec(shape=[None, 5], dtype=dtypes.float32)])
     signature_outputs = fn(inputs)
-    expected_outputs = {model.output_names[0]: model(inputs)}
+    if model.output_names:
+      expected_outputs = {model.output_names[0]: model(inputs)}
+    else:
+      expected_outputs = {'output_1': model(inputs)}
     self._assert_all_close(expected_outputs, signature_outputs)
 
-  @keras_parameterized.run_all_keras_modes
+  @combinations.generate(combinations.combine(mode=['graph', 'eager']))
   def test_subclassed_model_with_input_signature(self):
 
     class Model(keras.Model):
@@ -192,6 +218,36 @@ class TraceModelCallTest(keras_parameterized.TestCase):
     signature_outputs = fn([x, y])
     self._assert_all_close(expected_outputs, signature_outputs)
 
+  @keras_parameterized.run_with_all_model_types
+  @keras_parameterized.run_all_keras_modes
+  def test_model_with_fixed_input_dim(self):
+    """Ensure that the batch_dim is removed when saving.
+
+    When serving or retraining, it is important to reset the batch dim.
+    This can be an issue inside of tf.function. See b/132783590 for context.
+    """
+    model = testing_utils.get_small_mlp(10, 3, 5)
+
+    loss_object = keras.losses.MeanSquaredError()
+    optimizer = gradient_descent.SGD()
+
+    @def_function.function
+    def train_step(data, labels):
+      with backprop.GradientTape() as tape:
+        predictions = model(data)
+        loss = loss_object(labels, predictions)
+      gradients = tape.gradient(loss, model.trainable_variables)
+      optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+    x = np.random.random((8, 5))
+    y = np.random.random((8, 3))
+
+    train_step(x, y)
+
+    fn = saving_utils.trace_model_call(model)
+    self.assertEqual(fn.input_signature[0].shape.as_list(),
+                     tensor_shape.TensorShape([None, 5]).as_list())
+
 
 def _import_and_infer(save_dir, inputs):
   """Import a SavedModel into a TF 1.x-style graph and run `signature_key`."""
@@ -200,7 +256,9 @@ def _import_and_infer(save_dir, inputs):
     model = loader.load(session, [tag_constants.SERVING], save_dir)
     signature = model.signature_def[
         signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY]
-    assert set(inputs.keys()) == set(signature.inputs.keys())
+    assert set(inputs.keys()) == set(
+        signature.inputs.keys()), ('expected {}, found {}'.format(
+            signature.inputs.keys(), inputs.keys()))
     feed_dict = {}
     for arg_name in inputs.keys():
       feed_dict[graph.get_tensor_by_name(signature.inputs[arg_name].name)] = (
@@ -212,10 +270,10 @@ def _import_and_infer(save_dir, inputs):
     return session.run(output_dict, feed_dict=feed_dict)
 
 
+@keras_parameterized.run_with_all_model_types
+@keras_parameterized.run_all_keras_modes(always_skip_v1=True)
 class ModelSaveTest(keras_parameterized.TestCase):
 
-  @keras_parameterized.run_with_all_model_types
-  @keras_parameterized.run_all_keras_modes(always_skip_v1=True)
   def test_model_save(self):
     input_dim = 5
     model = testing_utils.get_small_mlp(10, 3, input_dim)
@@ -227,12 +285,20 @@ class ModelSaveTest(keras_parameterized.TestCase):
     save_dir = os.path.join(self.get_temp_dir(), 'saved_model')
     save_lib.save(model, save_dir)
 
-    self.assertAllClose(
-        {model.output_names[0]: model.predict_on_batch(inputs)},
-        _import_and_infer(save_dir, {model.input_names[0]: np.ones((8, 5))}))
+    if model.output_names:
+      output_name = model.output_names[0]
+      input_name = model.input_names[0]
+    else:
+      output_name = 'output_1'
+      input_name = 'input_1'
+
+    self.assertAllClose({output_name: model.predict_on_batch(inputs)},
+                        _import_and_infer(save_dir,
+                                          {input_name: np.ones((8, 5))}))
 
 
-class ExtractModelMetricsTest(test.TestCase):
+@test_util.run_deprecated_v1  # Not used in v2.
+class ExtractModelMetricsTest(keras_parameterized.TestCase):
 
   def test_extract_model_metrics(self):
     a = keras.layers.Input(shape=(3,), name='input_a')
@@ -265,8 +331,7 @@ class ExtractModelMetricsTest(test.TestCase):
             keras.metrics.BinaryAccuracy(), 'mae',
             keras.metrics.mean_squared_error
         ],
-        optimizer=rmsprop.RMSPropOptimizer(learning_rate=0.01),
-        run_eagerly=None)
+        optimizer=rmsprop.RMSPropOptimizer(learning_rate=0.01))
     extract_metrics = saving_utils.extract_model_metrics(model)
     self.assertEqual(set(model_metric_names), set(model.metrics_names))
     self.assertEqual(set(extract_metric_names), set(extract_metrics.keys()))

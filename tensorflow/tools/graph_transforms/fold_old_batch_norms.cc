@@ -13,14 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/tools/graph_transforms/fold_constants_lib.h"
-
 #include "tensorflow/core/common_runtime/constant_folding.h"
-#include "tensorflow/core/graph/graph_constructor.h"
+#include "tensorflow/core/common_runtime/graph_constructor.h"
 #include "tensorflow/core/graph/node_builder.h"
 #include "tensorflow/core/graph/subgraph.h"
 #include "tensorflow/core/platform/init_main.h"
 #include "tensorflow/core/public/session.h"
+#include "tensorflow/tools/graph_transforms/fold_constants_lib.h"
 #include "tensorflow/tools/graph_transforms/transform_utils.h"
 
 namespace tensorflow {
@@ -163,7 +162,7 @@ Status FuseScaleOffsetToConvWeights(const std::vector<float>& scale_values,
   NodeDef bias_add_node;
   bias_add_node.set_op("BiasAdd");
   bias_add_node.set_name(conv_output_name);
-  if (!conv_node.attr().count("data_format")) {
+  if (conv_node.attr().count("data_format")) {
     CopyNodeAttr(conv_node, "data_format", "data_format", &bias_add_node);
   }
   CopyNodeAttr(conv_node, "T", "T", &bias_add_node);

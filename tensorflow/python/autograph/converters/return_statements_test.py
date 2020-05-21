@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python.autograph.converters import functions
 from tensorflow.python.autograph.converters import return_statements
 from tensorflow.python.autograph.core import converter_testing
 from tensorflow.python.framework import ops
@@ -28,7 +29,7 @@ class SingleReturnTest(converter_testing.TestCase):
 
   def assertTransformedEquivalent(self, test_fn, *inputs):
     ns = {'ops': ops}
-    with self.converted(test_fn, return_statements, ns) as result:
+    with self.converted(test_fn, (functions, return_statements), ns) as result:
       self.assertEqual(test_fn(*inputs), result.test_fn(*inputs))
 
   def test_straightline(self):
@@ -37,6 +38,24 @@ class SingleReturnTest(converter_testing.TestCase):
       return x * x
 
     self.assertTransformedEquivalent(test_fn, 2)
+
+  def test_superfluous_returns(self):
+
+    def test_fn():
+      retval = 1
+      return retval
+      retval = 2  # pylint:disable=unreachable
+      return retval
+
+    self.assertTransformedEquivalent(test_fn)
+
+  def test_superfluous_returns_adjacent(self):
+
+    def test_fn():
+      return 1
+      return 2  # pylint:disable=unreachable
+
+    self.assertTransformedEquivalent(test_fn)
 
   def test_conditional(self):
 
@@ -49,7 +68,7 @@ class SingleReturnTest(converter_testing.TestCase):
     self.assertTransformedEquivalent(test_fn, 2)
     self.assertTransformedEquivalent(test_fn, -2)
 
-  def test_missing_else(self):
+  def test_conditional_missing_else(self):
 
     def test_fn(x):
       if x > 0:
@@ -58,7 +77,7 @@ class SingleReturnTest(converter_testing.TestCase):
     self.assertTransformedEquivalent(test_fn, 2)
     self.assertTransformedEquivalent(test_fn, -2)
 
-  def test_missing_else_then_default(self):
+  def test_conditional_missing_else_then_default(self):
 
     def test_fn(x):
       if x > 0:
@@ -68,7 +87,7 @@ class SingleReturnTest(converter_testing.TestCase):
     self.assertTransformedEquivalent(test_fn, 2)
     self.assertTransformedEquivalent(test_fn, -2)
 
-  def test_else_only_then_default(self):
+  def test_conditional_else_only_then_default(self):
 
     def test_fn(x):
       if x < 0:
@@ -216,6 +235,25 @@ class SingleReturnTest(converter_testing.TestCase):
     self.assertTransformedEquivalent(test_fn, 3)
     self.assertTransformedEquivalent(test_fn, 4)
 
+  def test_multiple_returns_in_nested_scope(self):
+
+    def test_fn(a):
+      v = []
+      for x in a:
+        x -= 1
+        if x > 100:
+          return v
+        try:
+          raise ValueError('intentional')
+        except ValueError:  # pylint:disable=bare-except
+          return v
+        v.append(x)
+      return v
+
+    self.assertTransformedEquivalent(test_fn, [])
+    self.assertTransformedEquivalent(test_fn, [1])
+    self.assertTransformedEquivalent(test_fn, [2])
+    self.assertTransformedEquivalent(test_fn, [1, 2, 3])
 
 if __name__ == '__main__':
   test.main()

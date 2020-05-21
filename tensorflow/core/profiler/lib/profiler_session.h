@@ -15,16 +15,19 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_PROFILER_LIB_PROFILER_SESSION_H_
 #define TENSORFLOW_CORE_PROFILER_LIB_PROFILER_SESSION_H_
 
-#include "tensorflow/core/common_runtime/eager/context.h"
-#include "tensorflow/core/lib/core/status.h"
+#include <memory>
+#include <vector>
+
 #include "tensorflow/core/platform/mutex.h"
+#include "tensorflow/core/platform/status.h"
+#include "tensorflow/core/platform/thread_annotations.h"
+#include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/profiler/internal/profiler_interface.h"
+#include "tensorflow/core/profiler/profiler_options.pb.h"
+#include "tensorflow/core/profiler/protobuf/xplane.pb.h"
+#include "tensorflow/core/protobuf/config.pb.h"
 
 namespace tensorflow {
-
-struct ProfilerContext {
-  EagerContext* eager_context = nullptr;
-};
 
 // A profiler which will start profiling when creating the object and will stop
 // when either the object is destroyed or SerializedToString is called. It will
@@ -36,33 +39,50 @@ struct ProfilerContext {
 class ProfilerSession {
  public:
   // Creates and ProfilerSession and starts profiling.
-  static std::unique_ptr<ProfilerSession> Create(
-      ProfilerContext* const context);
+  static std::unique_ptr<ProfilerSession> Create(const ProfileOptions& options);
+  static std::unique_ptr<ProfilerSession> Create();
 
-  // Deletes an exsiting Profiler and enables starting a new one.
+  static ProfileOptions DefaultOptions() {
+    ProfileOptions options;
+    options.set_version(1);
+    options.set_device_tracer_level(1);
+    options.set_host_tracer_level(2);
+    options.set_device_type(ProfileOptions::UNSPECIFIED);
+    options.set_python_tracer_level(0);
+    options.set_enable_hlo_proto(false);
+    options.set_include_dataset_ops(true);
+    return options;
+  }
+
+  // Deletes an existing Profiler and enables starting a new one.
   ~ProfilerSession();
 
-  tensorflow::Status Status() LOCKS_EXCLUDED(mutex_);
+  tensorflow::Status Status() TF_LOCKS_EXCLUDED(mutex_);
 
-  tensorflow::Status SerializeToString(string* content) LOCKS_EXCLUDED(mutex_);
+  tensorflow::Status CollectData(profiler::XSpace* space)
+      TF_LOCKS_EXCLUDED(mutex_);
+
+  tensorflow::Status CollectData(RunMetadata* run_metadata)
+      TF_LOCKS_EXCLUDED(mutex_);
 
  private:
   // Constructs an instance of the class and starts profiling
-  explicit ProfilerSession(ProfilerContext* const context);
+  explicit ProfilerSession(const ProfileOptions& options);
 
-  // Profiler is neither copyable or movable.
+  // ProfilerSession is neither copyable or movable.
   ProfilerSession(const ProfilerSession&) = delete;
   ProfilerSession& operator=(const ProfilerSession&) = delete;
 
-  std::vector<std::unique_ptr<tensorflow::profiler::ProfilerInterface>>
-      profilers_ GUARDED_BY(mutex_);
+  std::vector<std::unique_ptr<profiler::ProfilerInterface>> profilers_
+      TF_GUARDED_BY(mutex_);
 
   // True if the session is active.
-  bool active_ GUARDED_BY(mutex_);
+  bool active_ TF_GUARDED_BY(mutex_);
 
-  tensorflow::Status status_ GUARDED_BY(mutex_);
-  const uint64 start_time_micros_;
+  tensorflow::Status status_ TF_GUARDED_BY(mutex_);
+  const uint64 start_time_ns_;
   mutex mutex_;
+  ProfileOptions options_;
 };
 
 }  // namespace tensorflow

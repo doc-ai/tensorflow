@@ -28,8 +28,8 @@ from tensorflow.python.training import optimizer as optimizer_v1
 from tensorflow.python.training.saving import saveable_object as saveable_object_lib
 from tensorflow.python.training.saving import saveable_object_util
 from tensorflow.python.training.tracking import base
-from tensorflow.python.training.tracking import object_identity
 from tensorflow.python.training.tracking import tracking
+from tensorflow.python.util import object_identity
 
 
 _ESCAPE_CHAR = "."  # For avoiding conflicts with user-specified names.
@@ -93,7 +93,9 @@ def _serialize_slot_variables(trackable_objects, node_ids, object_names):
   for trackable in non_slot_objects:
     if (isinstance(trackable, optimizer_v1.Optimizer)
         # TODO(b/110718070): Fix Keras imports.
-        or hasattr(trackable, "_create_or_restore_slot_variable")):
+        # Note: dir() is used rather than hasattr() here to avoid triggering
+        # custom __getattr__ code, see b/152031870 for context.
+        or "_create_or_restore_slot_variable" in dir(trackable)):
       naming_scheme = _slot_variable_naming_for_optimizer(
           optimizer_path=object_names[trackable])
       slot_names = trackable.get_slot_names()

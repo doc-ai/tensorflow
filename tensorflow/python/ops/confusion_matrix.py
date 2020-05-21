@@ -27,6 +27,7 @@ from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.util import deprecation
+from tensorflow.python.util import dispatch
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -67,9 +68,11 @@ def remove_squeezable_dimensions(
     if (labels_rank is not None) and (predictions_rank is not None):
       # Use static rank.
       rank_diff = predictions_rank - labels_rank
-      if rank_diff == expected_rank_diff + 1:
+      if (rank_diff == expected_rank_diff + 1 and
+          predictions_shape.dims[-1].is_compatible_with(1)):
         predictions = array_ops.squeeze(predictions, [-1])
-      elif rank_diff == expected_rank_diff - 1:
+      elif (rank_diff == expected_rank_diff - 1 and
+            labels_shape.dims[-1].is_compatible_with(1)):
         labels = array_ops.squeeze(labels, [-1])
       return labels, predictions
 
@@ -91,6 +94,7 @@ def remove_squeezable_dimensions(
 
 
 @tf_export('math.confusion_matrix', v1=[])
+@dispatch.add_dispatch_support
 def confusion_matrix(labels,
                      predictions,
                      num_classes=None,
@@ -116,7 +120,7 @@ def confusion_matrix(labels,
   For example:
 
   ```python
-    tf.confusion_matrix([1, 2, 4], [2, 2, 4]) ==>
+    tf.math.confusion_matrix([1, 2, 4], [2, 2, 4]) ==>
         [[0 0 0 0 0]
          [0 0 1 0 0]
          [0 0 1 0 0]
@@ -200,6 +204,7 @@ def confusion_matrix(labels,
 
 
 @tf_export(v1=['math.confusion_matrix', 'confusion_matrix'])
+@dispatch.add_dispatch_support
 @deprecation.deprecated_endpoints('confusion_matrix', 'train.confusion_matrix')
 def confusion_matrix_v1(labels,
                         predictions,
@@ -226,7 +231,7 @@ def confusion_matrix_v1(labels,
   For example:
 
   ```python
-    tf.confusion_matrix([1, 2, 4], [2, 2, 4]) ==>
+    tf.math.confusion_matrix([1, 2, 4], [2, 2, 4]) ==>
         [[0 0 0 0 0]
          [0 0 1 0 0]
          [0 0 1 0 0]

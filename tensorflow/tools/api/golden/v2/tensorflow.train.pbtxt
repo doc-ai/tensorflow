@@ -13,6 +13,10 @@ tf_module {
     mtype: "<type \'type\'>"
   }
   member {
+    name: "CheckpointOptions"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "ClusterDef"
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
   }
@@ -71,6 +75,10 @@ tf_module {
   member {
     name: "experimental"
     mtype: "<type \'module\'>"
+  }
+  member_method {
+    name: "checkpoints_iterator"
+    argspec: "args=[\'checkpoint_dir\', \'min_interval_secs\', \'timeout\', \'timeout_fn\'], varargs=None, keywords=None, defaults=[\'0\', \'None\', \'None\'], "
   }
   member_method {
     name: "get_checkpoint_state"

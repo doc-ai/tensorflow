@@ -17,18 +17,23 @@ limitations under the License.
 
 #include <algorithm>
 #include <queue>
+#include <string>
 #include <vector>
 
+#include "absl/algorithm/container.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/optional.h"
 #include "tensorflow/compiler/xla/map_util.h"
 #include "tensorflow/compiler/xla/service/hlo_casting_utils.h"
 #include "tensorflow/compiler/xla/service/hlo_computation.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_opcode.h"
+#include "tensorflow/compiler/xla/service/hlo_value.h"
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/status.h"
 #include "tensorflow/compiler/xla/types.h"
@@ -41,14 +46,14 @@ namespace xla {
 using absl::StrAppend;
 using absl::StrCat;
 
-HloDataflowAnalysis::HloDataflowAnalysis(
-    const HloModule& module, bool ssa_form, bool bitcast_defines_value,
-    const FusionCanShareBufferFunction& fusion_can_share_buffer)
+HloDataflowAnalysis::HloDataflowAnalysis(const HloModule& module, bool ssa_form,
+                                         bool bitcast_defines_value,
+                                         const CanShareBuffer& can_share_buffer)
     : module_(module),
       ssa_form_(ssa_form),
       bitcast_defines_value_(bitcast_defines_value),
       call_graph_(CallGraph::Build(&module)),
-      fusion_can_share_buffer_(fusion_can_share_buffer) {}
+      can_share_buffer_(can_share_buffer) {}
 
 bool HloDataflowAnalysis::AreTransitiveUsesElementwiseOrTuple(
     const HloInstruction* inst) {
@@ -118,10 +123,11 @@ void HloDataflowAnalysis::MarkValueForDeletion(HloValue::Id value_id) {
 }
 
 void HloDataflowAnalysis::DeleteMarkedValues() {
-#ifndef NDEBUG
-  // Verify that no marked-for-deletion values are in any of the value sets.
+  // Use a set to prevent deleting an id twice.
   absl::flat_hash_set<HloValue::Id> id_set(value_ids_to_delete_.begin(),
                                            value_ids_to_delete_.end());
+#ifndef NDEBUG
+  // Verify that no marked-for-deletion values are in any of the value sets.
   for (const auto& pair : value_sets_) {
     const HloInstruction* instruction = pair.first;
     const InstructionValueSet& instruction_value_set = pair.second;
@@ -138,7 +144,7 @@ void HloDataflowAnalysis::DeleteMarkedValues() {
   }
 #endif
 
-  for (HloValue::Id value_id : value_ids_to_delete_) {
+  for (HloValue::Id value_id : id_set) {
     values_.erase(value_id);
   }
   value_ids_to_delete_.clear();
@@ -149,7 +155,7 @@ string HloDataflowAnalysis::ToString() const {
   StrAppend(&out, "  Instruction value sets:\n");
   for (const HloComputation* computation : module_.computations()) {
     for (const HloInstruction* instruction : computation->instructions()) {
-      StrAppend(&out, "    ", instruction->name(), ":\n");
+      StrAppend(&out, "Instruction: \n  ", instruction->name(), ":\n");
       if (instruction->shape().IsTuple()) {
         GetInstructionValueSet(instruction)
             .ForEachElement([this, &instruction, &out](
@@ -189,8 +195,20 @@ bool HloDataflowAnalysis::Phi(
   for (const InstructionValueSet* input : inputs) {
     VLOG(5) << "input value set = " << input->ToString();
   }
-  for (const InstructionValueSet* input : inputs) {
-    DCHECK(ShapeUtil::Compatible(instruction->shape(), input->shape()));
+
+  if (bitcast_defines_value_) {
+    absl::c_for_each(inputs, [&](const InstructionValueSet* input) {
+      DCHECK(ShapeUtil::Compatible(instruction->shape(), input->shape()));
+    });
+  } else {
+    const Shape& shape = instruction->shape();
+    PrimitiveType ty = shape.element_type();
+    bool is_array = shape.IsArray();
+    absl::c_for_each(inputs, [&](const InstructionValueSet* input) {
+      DCHECK(ty == input->shape().element_type() &&
+             (!is_array || ShapeUtil::ElementsIn(shape) ==
+                               ShapeUtil::ElementsIn(input->shape())));
+    });
   }
 
   bool changed = false;
@@ -204,22 +222,13 @@ bool HloDataflowAnalysis::Phi(
     const HloValue* current_value =
         value_set.values().size() == 1 ? value_set.values()[0] : nullptr;
 
-    // Construct a vector of unique value IDs of the inputs.
-    // Don't add value ids where the input is equal to the definition.
+    // Construct a vector of value IDs of the inputs.
     std::vector<HloValue::Id> input_value_ids;
     for (const InstructionValueSet* input : inputs) {
       for (const HloValue* value : input->element(index).values()) {
-        if (value->defining_instruction() == instruction &&
-            value->defining_index() == index) {
-          continue;
-        }
         input_value_ids.push_back(value->id());
       }
     }
-    absl::c_sort(input_value_ids);
-    input_value_ids.erase(
-        std::unique(input_value_ids.begin(), input_value_ids.end()),
-        input_value_ids.end());
 
     // Remove the existing phi value (if it exists). The phi can be its own
     // input, for example, in while body parameters where the body passes
@@ -228,14 +237,7 @@ bool HloDataflowAnalysis::Phi(
         (current_value != nullptr &&
          current_value->defining_instruction() == instruction &&
          current_value->defining_index() == index);
-    if (current_value_defined_here) {
-      VLOG(5) << "current_value_defined_here: " << current_value->ToString();
-      CHECK(current_value->is_phi());
-      auto it = absl::c_find(input_value_ids, current_value->id());
-      if (it != input_value_ids.end()) {
-        input_value_ids.erase(it);
-      }
-    }
+
     VLOG(5) << "after input_value_ids.size = " << input_value_ids.size();
     if (input_value_ids.empty()) {
       // A value set which has at least one element should never have its value
@@ -265,11 +267,33 @@ bool HloDataflowAnalysis::Phi(
       // Multiple distinct values reach this point. A phi value is
       // necessary.
       CHECK_GT(input_value_ids.size(), 1);
-      if (current_value == nullptr ||
-          !(current_value->is_phi() && current_value_defined_here)) {
+      bool phi_defined_here =
+          current_value_defined_here && current_value->is_phi();
+      if (current_value == nullptr || !phi_defined_here) {
         value_set.Clear();
         value_set.AddValue(NewHloValue(instruction, index, /*is_phi=*/true));
+
+        std::vector<HloValue*> inputs;
+        inputs.reserve(input_value_ids.size());
+        for (HloValue::Id id : input_value_ids) {
+          inputs.push_back(&GetValue(id));
+        }
+        // Register the phi into phi graph.
+        phi_graph_.RegisterPhi(*value_set.values()[0], inputs);
         changed = true;
+      } else if (phi_defined_here) {
+        std::vector<HloValue*> new_inputs;
+        new_inputs.reserve(input_value_ids.size());
+        for (HloValue::Id id : input_value_ids) {
+          new_inputs.push_back(&GetValue(id));
+        }
+
+        if (!phi_graph_.InputsEqualTo(*current_value, new_inputs)) {
+          VLOG(1) << current_value->ToShortString() << " has new phi inputs: ";
+          // Update phi inputs.
+          phi_graph_.RegisterPhi(*current_value, new_inputs);
+          changed = true;
+        }
       }
     }
   }
@@ -282,6 +306,23 @@ const HloValue& HloDataflowAnalysis::GetValue(HloValue::Id value_id) const {
 
 HloValue& HloDataflowAnalysis::GetValue(HloValue::Id value_id) {
   return values_.at(value_id);
+}
+
+HloValueSet HloDataflowAnalysis::GetFlattenedValueSet(
+    const HloInstruction* instruction) const {
+  HloValueSet value_set;
+
+  const InstructionValueSet& value_set_tree =
+      GetInstructionValueSet(instruction);
+
+  std::vector<const HloValueSet*> all_sets;
+  for (auto& pair : value_set_tree) {
+    const HloValueSet& value_set = pair.second;
+    all_sets.push_back(&value_set);
+  }
+  value_set.AssignUnionOf(all_sets);
+
+  return value_set;
 }
 
 const HloValueSet& HloDataflowAnalysis::GetValueSet(
@@ -315,6 +356,20 @@ bool HloDataflowAnalysis::UpdateBitcastValueSet(HloInstruction* bitcast) {
   return false;
 }
 
+bool HloDataflowAnalysis::UpdateSetDimensionSizeValueSet(
+    HloInstruction* set_dimension_size) {
+  CHECK_EQ(set_dimension_size->opcode(), HloOpcode::kSetDimensionSize);
+  const InstructionValueSet& operand_set =
+      GetInstructionValueSet(set_dimension_size->operand(0));
+  InstructionValueSet& set_dimension_size_set =
+      GetInstructionValueSet(set_dimension_size);
+  if (operand_set != set_dimension_size_set) {
+    set_dimension_size_set = operand_set;
+    return true;
+  }
+  return false;
+}
+
 bool HloDataflowAnalysis::UpdateSendValueSet(HloInstruction* send) {
   CHECK_EQ(send->opcode(), HloOpcode::kSend);
   bool changed = false;
@@ -333,6 +388,33 @@ bool HloDataflowAnalysis::UpdateSendValueSet(HloInstruction* send) {
       value_set = operand_value_set;
       changed = true;
     }
+  }
+  return changed;
+}
+
+bool HloDataflowAnalysis::UpdateCopyStartValueSet(HloInstruction* copy_start) {
+  CHECK_EQ(copy_start->opcode(), HloOpcode::kCopyStart);
+  bool changed = false;
+  // CopyStart forwards the operand value to element {1} of its output.
+  const HloValueSet& operand_value_set = GetValueSet(copy_start->operand(0));
+  HloValueSet& value_set = GetValueSet(copy_start, {1});
+  if (value_set != operand_value_set) {
+    value_set = operand_value_set;
+    changed = true;
+  }
+  return changed;
+}
+
+bool HloDataflowAnalysis::UpdateCopyDoneValueSet(HloInstruction* copy_done) {
+  CHECK_EQ(copy_done->opcode(), HloOpcode::kCopyDone);
+  bool changed = false;
+  // CopyDone forwards the operand value at {0} to element {} of its output.
+  const HloValueSet& operand_value_set =
+      GetValueSet(copy_done->operand(0), {0});
+  HloValueSet& value_set = GetValueSet(copy_done);
+  if (value_set != operand_value_set) {
+    value_set = operand_value_set;
+    changed = true;
   }
   return changed;
 }
@@ -494,9 +576,9 @@ bool HloDataflowAnalysis::UpdateParameterValueSet(HloInstruction* parameter) {
       CHECK_EQ(parameter->parameter_number(), 0);
       inputs.push_back(
           &GetInstructionValueSet(callsite.instruction()->operand(0)));
-      // If the parameter *is* the root, then don't consider it's current state
-      // (InstructionValueSet) as we are recomputing its current
-      // state. Otherwise, the parameter state would never be updated.
+      // If the parameter *is not* the root, parameter state would be
+      // updated by the root, otherwise don't consider it's current state
+      // (InstructionValueSet) as we are recomputing its current state.
       if (parameter !=
           callsite.instruction()->while_body()->root_instruction()) {
         inputs.push_back(&GetInstructionValueSet(
@@ -529,7 +611,6 @@ bool HloDataflowAnalysis::UpdateParameterValueSet(HloInstruction* parameter) {
                     "called from call, while, or conditional instructions";
     }
   }
-
   if (ssa_form_ && need_phi) {
     return Phi(parameter, inputs);
   } else {
@@ -603,6 +684,8 @@ bool HloDataflowAnalysis::UpdateInstructionValueSet(
       return UpdateAddDependencyValueSet(instruction);
     case HloOpcode::kBitcast:
       return UpdateBitcastValueSet(instruction);
+    case HloOpcode::kSetDimensionSize:
+      return UpdateSetDimensionSizeValueSet(instruction);
     case HloOpcode::kDomain:
       return UpdateDomainValueSet(instruction);
     case HloOpcode::kCopy:
@@ -623,6 +706,10 @@ bool HloDataflowAnalysis::UpdateInstructionValueSet(
       return UpdateSendValueSet(instruction);
     case HloOpcode::kRecvDone:
       return UpdateRecvDoneValueSet(instruction);
+    case HloOpcode::kCopyStart:
+      return UpdateCopyStartValueSet(instruction);
+    case HloOpcode::kCopyDone:
+      return UpdateCopyDoneValueSet(instruction);
     case HloOpcode::kConditional:
       return UpdateConditionalValueSet(instruction);
     default:
@@ -646,10 +733,18 @@ void HloDataflowAnalysis::Propagate() {
       add_to_worklist(instruction);
     }
   }
+  VLOG(1) << "SSA_FORM_: " << ssa_form_;
 
   while (!worklist.empty()) {
     HloInstruction* instruction = worklist.front();
+    auto add_to_worklist = [&](HloInstruction* todo) {
+      if (workset.insert(todo).second) {
+        VLOG(1) << "  Adding todo : " << todo->name();
+        worklist.push(todo);
+      }
+    };
     worklist.pop();
+
     workset.erase(workset.find(instruction));
 
     VLOG(3) << "Worklist top: " << instruction->name();
@@ -741,9 +836,9 @@ Status HloDataflowAnalysis::InitializeInstructionValueSets() {
                           std::forward_as_tuple(instruction),
                           std::forward_as_tuple(instruction->shape()));
 
-      // Lambda to set the value set to define all values in the output of the
-      // instruction.
-      auto define_all_values = [this, &instruction](bool is_phi = false) {
+      // For each sub-shape of the instruction shape, add a new HloValue to its
+      // HloValueSet.
+      auto define_all_values = [this, &instruction]() {
         for (auto& pair : GetInstructionValueSet(instruction)) {
           const ShapeIndex& index = pair.first;
           HloValue* value = NewHloValue(instruction, index, /*is_phi=*/false);
@@ -751,16 +846,8 @@ Status HloDataflowAnalysis::InitializeInstructionValueSets() {
         }
       };
 
-      // Lambda to set the value set to define only the top-level buffer in the
-      // output of the instruction. Any other values flow from the operands of
-      // the instruction (or from cross-computation dataflow).
-      auto define_top_level_only = [this, &instruction]() {
-        HloValue* value =
-            NewHloValue(instruction, /*index=*/{}, /*is_phi=*/false);
-        GetValueSet(instruction, /*index=*/{}).AddValue(value);
-      };
-
-      // Lambda to set the value set at the given index of the output.
+      // Add a new HloValue to the HloValueSet corresponding to the given index
+      // of the instruction shape.
       auto define_value_at = [this, &instruction](const ShapeIndex& index) {
         HloValue* value = NewHloValue(instruction, index, /*is_phi=*/false);
         GetValueSet(instruction, index).AddValue(value);
@@ -772,6 +859,7 @@ Status HloDataflowAnalysis::InitializeInstructionValueSets() {
             define_all_values();
           }
           break;
+        case HloOpcode::kSetDimensionSize:
         case HloOpcode::kAddDependency:
         case HloOpcode::kWhile:
         case HloOpcode::kCall:
@@ -807,7 +895,18 @@ Status HloDataflowAnalysis::InitializeInstructionValueSets() {
         case HloOpcode::kTuple:
           // These instructions only define their top-level values. Any other
           // values flow from their operands.
-          define_top_level_only();
+          define_value_at(/*index=*/{});
+          break;
+        case HloOpcode::kCopyStart:
+          // CopyStart produces a tuple of {destination buffer, aliased operand,
+          // U32 context}.
+          define_value_at(/*index=*/{});
+          define_value_at(/*index=*/{0});
+          define_value_at(/*index=*/{2});
+          break;
+        case HloOpcode::kCopyDone:
+          // CopyDone consumes a tuple produced by CopyStart and produces an
+          // element. Its output aliases its input tuple element {0}.
           break;
         case HloOpcode::kRecvDone:
           // RecvDone produces a two-element tuple. Element zero aliases its
@@ -833,18 +932,56 @@ Status HloDataflowAnalysis::InitializeInstructionValueSets() {
   return Status::OK();
 }
 
+void HloDataflowAnalysis::OptimizePhiValues() {
+  // Only applicable to SSA form where phis are defined.
+  if (!ssa_form_) {
+    return;
+  }
+
+  VLOG(1) << "Before phi graph optimization";
+  XLA_VLOG_LINES(1, phi_graph_.ToString());
+  phi_graph_.Optimize();
+  VLOG(1) << "After phi graph optimization";
+  XLA_VLOG_LINES(1, phi_graph_.ToString());
+
+  for (const HloComputation* computation : module_.computations()) {
+    for (HloInstruction* instruction : computation->instructions()) {
+      InstructionValueSet& instruction_value_set =
+          GetInstructionValueSet(instruction);
+      VLOG(1) << "inst: " << instruction->name();
+      VLOG(1) << instruction_value_set.ToString();
+      instruction_value_set.ForEachMutableElement(
+          [&](const xla::ShapeIndex& index, HloValueSet* value_set) {
+            auto values = value_set->values();
+            if (!(values.size() == 1 && values[0]->is_phi())) {
+              return;
+            }
+            HloValue::Id phi_id = values[0]->id();
+            HloValue::Id new_id = phi_graph_.FindOptimizedValue(phi_id);
+            if (new_id != phi_id) {
+              value_set->Clear();
+              const HloValue& new_value = GetValue(new_id);
+              value_set->AddValue(&new_value);
+              MarkValueForDeletion(phi_id);
+            }
+          });
+    }
+  }
+}
+
 /* static */
 StatusOr<std::unique_ptr<HloDataflowAnalysis>> HloDataflowAnalysis::Run(
     const HloModule& module, bool ssa_form, bool bitcast_defines_value,
-    const FusionCanShareBufferFunction& fusion_can_share_buffer) {
+    const CanShareBuffer& can_share_buffer) {
   VLOG(1) << "HloDataflowAnalysis::Run on module " << module.name();
   XLA_VLOG_LINES(2, module.ToString());
 
   auto dataflow_analysis = absl::WrapUnique(new HloDataflowAnalysis(
-      module, ssa_form, bitcast_defines_value, fusion_can_share_buffer));
+      module, ssa_form, bitcast_defines_value, can_share_buffer));
 
   TF_RETURN_IF_ERROR(dataflow_analysis->InitializeInstructionValueSets());
   dataflow_analysis->Propagate();
+  dataflow_analysis->OptimizePhiValues();
 
   // Delete all values marked for deletion.
   dataflow_analysis->DeleteMarkedValues();
@@ -929,8 +1066,7 @@ bool HloDataflowAnalysis::DoesNotUseOperandBuffer(
   for (const HloValue* value : GetValueSet(operand, index).values()) {
     for (const HloUse& use : value->uses()) {
       if (use.instruction == user) {
-        if (user->opcode() == HloOpcode::kFusion &&
-            user->fusion_kind() == HloInstruction::FusionKind::kLoop) {
+        if (user->IsLoopFusion()) {
           HloInstruction* fusion_param =
               user->fused_parameter(use.operand_number);
           const HloValue& value =
@@ -958,7 +1094,6 @@ bool HloDataflowAnalysis::DoesNotUseOperandBuffer(
 //
 // Returns true if:
 //
-//  * fusion is a loop or input fusion, AND
 //  * fusion_param is used by the root of dynamic-update-slice as the "base" of
 //    the update, i.e. the thing being updated, AND
 //  * all other uses of fusion_param are dynamic-slices that slice the same
@@ -977,13 +1112,6 @@ static bool CanDoInPlaceDynamicUpdateSlice(HloInstruction* fusion,
   auto* fusion_param = fusion_param_value.instruction();
   CHECK_EQ(fusion_param->opcode(), HloOpcode::kParameter);
   CHECK_EQ(fusion_param->parent(), fusion->fused_instructions_computation());
-
-  // fusion must be a loop or input fusion.
-  auto kind = fusion->fusion_kind();
-  if (kind != HloInstruction::FusionKind::kLoop &&
-      kind != HloInstruction::FusionKind::kInput) {
-    return false;
-  }
 
   // fusion_param must be used by the root as the "base" of the
   // dynamic-update-slice.  The natural way to check this would be
@@ -1022,6 +1150,9 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
     HloInstruction* user, const ShapeIndex& user_index) const {
   CHECK(user->IsUserOf(operand))
       << "user: " << user->ToString() << " operand: " << operand->ToString();
+  if (operand->opcode() == HloOpcode::kConstant) {
+    return false;
+  }
   const Shape& operand_subshape =
       ShapeUtil::GetSubshape(operand->shape(), operand_index);
   const Shape& user_subshape =
@@ -1043,7 +1174,7 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
     // TODO(b/80315712): This code is in a bit of a weird intermediate state
     // at the moment. The in-place DUS check really needs to be common to all
     // backends, so it runs first. Then we run the backend-specific check if
-    // provided, or go through the target-indepdendent check if not.
+    // provided, or go through the target-independent check if not.
     // Unfortunately, the notionally "target-independent" path actually contains
     // some target-specific code, so we can't run all of it *in addition* to the
     // target-specific function, like the interface documentation says.
@@ -1051,17 +1182,26 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
         HloOpcode::kDynamicUpdateSlice) {
       return CanDoInPlaceDynamicUpdateSlice(user, fusion_param_value);
     }
+  }
 
-    if (fusion_can_share_buffer_ != nullptr) {
-      return fusion_can_share_buffer_(user, operand);
+  if (can_share_buffer_ != nullptr) {
+    if (absl::optional<bool> hint =
+            can_share_buffer_(user, operand, user_index)) {
+      return *hint;
     }
+  }
 
-    if (user->fusion_kind() == HloInstruction::FusionKind::kLoop ||
-        user->fusion_kind() == HloInstruction::FusionKind::kInput) {
+  if (user->opcode() == HloOpcode::kFusion) {
+    HloInstruction* fusion_param =
+        user->fused_parameter(user->operand_index(operand));
+    const HloValue& fusion_param_value =
+        GetValueDefinedAt(fusion_param, operand_index);
+
+    if (user->IsLoopFusion() || user->IsInputFusion()) {
       return AreTransitiveUsesElementwiseOrTuple(fusion_param);
     }
 
-    if (user->fusion_kind() == HloInstruction::FusionKind::kOutput &&
+    if (user->IsOutputFusion() &&
         user->fused_expression_root()->opcode() == HloOpcode::kAdd) {
       // Output fusion with kAdd fused root.
 
@@ -1093,11 +1233,13 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
 
   if (user->opcode() == HloOpcode::kDynamicUpdateSlice ||
       user->opcode() == HloOpcode::kScatter ||
+      user->opcode() == HloOpcode::kTriangularSolve ||
       user->opcode() == HloOpcode::kWhile) {
-    // We eliminated other users in BufferLiveness::live_range_strictly_before,
-    // so here we just need to check that the use is at operand index 0.
-    std::vector<int64> operand_indices = user->OperandIndices(operand);
-    return operand_indices.size() == 1 && operand_indices[0] == 0;
+    // We eliminated other users in HloOrdering::LiveRangeStrictlyBefore
+    // so here we just need to check that the use is at the right operand index.
+    const auto operand_indices = user->OperandIndices(operand);
+    int64 operand_no = user->opcode() == HloOpcode::kTriangularSolve ? 1 : 0;
+    return operand_indices.size() == 1 && operand_indices[0] == operand_no;
   }
   if (user->opcode() == HloOpcode::kSort) {
     // Only valid if there are no other users.
@@ -1111,7 +1253,7 @@ bool HloDataflowAnalysis::CanShareOperandBufferWithUser(
     }
     CHECK(!user_index.empty());
     // Only share with the right tuple element buffer.
-    std::vector<int64> operand_indices = user->OperandIndices(operand);
+    const auto operand_indices = user->OperandIndices(operand);
     return operand_indices.size() == 1 && user_index[0] == operand_indices[0];
   }
   if (user->opcode() == HloOpcode::kCall) {

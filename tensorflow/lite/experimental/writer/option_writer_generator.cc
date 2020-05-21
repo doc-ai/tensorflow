@@ -16,7 +16,7 @@ limitations under the License.
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
-#include "flatbuffers/minireflect.h"  // TF:flatbuffers
+#include "flatbuffers/minireflect.h"  // from @flatbuffers
 #include "tensorflow/lite/schema/reflection/schema_generated.h"
 
 namespace tflite {
@@ -28,6 +28,7 @@ namespace {
 static const char* param_structs[] = {"TfLiteAddParams",
                                       "TfLiteArgMaxParams",
                                       "TfLiteArgMinParams",
+                                      "TfLiteBatchMatMulParams",
                                       "TfLiteBatchToSpaceNDParams",
                                       "TfLiteBidirectionalSequenceLSTMParams",
                                       "TfLiteBidirectionalSequenceRNNParams",
@@ -40,6 +41,7 @@ static const char* param_structs[] = {"TfLiteAddParams",
                                       "TfLiteFakeQuantParams",
                                       "TfLiteFullyConnectedParams",
                                       "TfLiteGatherParams",
+                                      "TfLiteIfParams",
                                       "TfLiteL2NormParams",
                                       "TfLiteLeakyReluParams",
                                       "TfLiteLocalResponseNormParams",
@@ -63,6 +65,7 @@ static const char* param_structs[] = {"TfLiteAddParams",
                                       "TfLiteSoftmaxParams",
                                       "TfLiteSpaceToBatchNDParams",
                                       "TfLiteSpaceToDepthParams",
+                                      "TfLiteDepthToSpaceParams",
                                       "TfLiteSparseToDenseParams",
                                       "TfLiteSplitParams",
                                       "TfLiteSplitVParams",
@@ -76,6 +79,7 @@ static const char* param_structs[] = {"TfLiteAddParams",
                                       "TfLiteUniqueParams",
                                       "TfLiteUnpackParams",
                                       "TfLiteReverseSequenceParams",
+                                      "TfLiteWhileParams",
                                       nullptr};
 }  // namespace
 
@@ -174,6 +178,7 @@ class OpOptionData {
     op_to_option_["RELU"] = "";
     op_to_option_["RELU_N1_TO_1"] = "";
     op_to_option_["RELU6"] = "";
+    op_to_option_["ROUND"] = "";
     op_to_option_["TANH"] = "";
     op_to_option_["PRELU"] = "";
     op_to_option_["SIN"] = "";
@@ -192,7 +197,7 @@ class OpOptionData {
     option_to_struct_["MirrorPadOptions"] = "TfLiteMirrorPaddingParams";
     // Now for every op, try to find an option.
     bool fatal = false;
-    for (auto op_name : ops_) {
+    for (const auto& op_name : ops_) {
       bool found_option = false;
       auto d = tflite::BuiltinOptionsTypeTable();
       std::string collapsed_option_name_guess =
@@ -254,7 +259,7 @@ void GenerateImportForResizeBilinearOp(FILE* fp) {
           "    const auto* params = reinterpret_cast<const "
           "TfLiteResizeBilinearParams*>(builtin_op_data);\n"
           "    auto union_type = CreateResizeBilinearOptions(*fbb, "
-          "params->align_corners).Union();\n"
+          "params->align_corners, params->half_pixel_centers).Union();\n"
           "    return std::make_pair(BuiltinOptions_ResizeBilinearOptions, "
           "union_type);\n"
           "  }\n  break;\n");
@@ -272,10 +277,12 @@ void GenerateImportForOp(FILE* fp, const std::string& op_name,
   }
 
   fprintf(fp, "  case BuiltinOperator_%s:  {\n", op_name.c_str());
-  fprintf(fp,
-          "    const auto* params = reinterpret_cast<const "
-          "%s*>(builtin_op_data);\n",
-          struct_name.c_str());
+  if (options->num_elems != 0) {
+    fprintf(fp,
+            "    const auto* params = reinterpret_cast<const "
+            "%s*>(builtin_op_data);\n",
+            struct_name.c_str());
+  }
 
   for (size_t i = 0; i < options->num_elems; i++) {
     std::string elem_name = options->names[i];

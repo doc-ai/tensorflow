@@ -23,32 +23,39 @@ import gast
 from tensorflow.python.autograph.pyct import errors
 
 
-class UnsupportedFeaturesChecker(gast.NodeTransformer):
+class UnsupportedFeaturesChecker(gast.NodeVisitor):
   """Quick check for Python features we know we don't support.
 
   Any features detected will cause AutoGraph to not compile a function.
   """
 
-  # TODO(b/124103128): Implement support for `global` statements
-  def visit_Global(self, node):
-    raise errors.AutoGraphError(
-        'The global keyword is not yet supported.')
+  def visit_Attribute(self, node):
+    if (node.attr is not None
+        and node.attr.startswith('__') and not node.attr.endswith('__')):
+      raise errors.UnsupportedLanguageElementError(
+          'mangled names are not yet supported')
+    self.generic_visit(node)
 
-  def visit_Nonlocal(self, node):
-    raise errors.AutoGraphError(
-        'The nonlocal keyword is not yet supported.')
+  def visit_For(self, node):
+    if node.orelse:
+      raise errors.UnsupportedLanguageElementError(
+          'for/else statement not yet supported')
+    self.generic_visit(node)
+
+  def visit_While(self, node):
+    if node.orelse:
+      raise errors.UnsupportedLanguageElementError(
+          'while/else statement not yet supported')
+    self.generic_visit(node)
 
   # These checks could potentially be replaced with inspect.isgeneratorfunction
   # to avoid a getsource/parse/ast-walk round trip.
   def visit_Yield(self, node):
-    raise errors.AutoGraphError(
-        'Generators are not supported by AutoGraph')
+    raise errors.UnsupportedLanguageElementError('generators are not supported')
 
   def visit_YieldFrom(self, node):
-    raise errors.AutoGraphError(
-        'Generators are not supported by AutoGraph')
+    raise errors.UnsupportedLanguageElementError('generators are not supported')
 
 
 def verify(node):
   UnsupportedFeaturesChecker().visit(node)
-

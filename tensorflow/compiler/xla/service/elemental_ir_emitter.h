@@ -17,12 +17,17 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_XLA_SERVICE_ELEMENTAL_IR_EMITTER_H_
 
 #include <unordered_map>
+#include <vector>
 
+#include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
+#include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_module_config.h"
+#include "tensorflow/compiler/xla/service/llvm_ir/ir_array.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/ir_builder_mixin.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/loop_emitter.h"
 #include "tensorflow/compiler/xla/statusor.h"
@@ -107,12 +112,6 @@ class ElementalIrEmitter : public IrBuilderMixin<ElementalIrEmitter> {
   llvm::Value* EmitIntegralMin(llvm::Value* lhs_value, llvm::Value* rhs_value,
                                bool is_signed);
 
-  virtual StatusOr<llvm::Value*> EmitErfInv(PrimitiveType prim_type,
-                                            llvm::Value* value);
-
-  virtual StatusOr<llvm::Value*> EmitErfcInv(PrimitiveType prim_type,
-                                             llvm::Value* value);
-
   virtual StatusOr<llvm::Value*> EmitAtan2(PrimitiveType prim_type,
                                            llvm::Value* lhs, llvm::Value* rhs);
 
@@ -120,6 +119,9 @@ class ElementalIrEmitter : public IrBuilderMixin<ElementalIrEmitter> {
                                          llvm::Value* value);
 
   virtual StatusOr<llvm::Value*> EmitSqrt(PrimitiveType prim_type,
+                                          llvm::Value* value);
+
+  virtual StatusOr<llvm::Value*> EmitCbrt(PrimitiveType prim_type,
                                           llvm::Value* value);
 
   virtual StatusOr<llvm::Value*> EmitRsqrt(PrimitiveType prim_type,
@@ -146,11 +148,32 @@ class ElementalIrEmitter : public IrBuilderMixin<ElementalIrEmitter> {
   virtual StatusOr<llvm::Value*> EmitTanh(PrimitiveType prim_type,
                                           llvm::Value* value);
 
-  virtual StatusOr<llvm::Value*> EmitRoundNearestAfz(PrimitiveType prim_type,
-                                                     llvm::Value* value);
-
   virtual StatusOr<llvm::Value*> EmitReducePrecision(const HloInstruction* hlo,
                                                      llvm::Value* x);
+
+  virtual StatusOr<std::tuple<llvm::Value*, llvm::Value*, llvm::Value*>>
+  EmitComplexAbsHelper(PrimitiveType prim_type, llvm::Value* operand_value,
+                       bool return_sqrt);
+
+  virtual StatusOr<llvm::Value*> EmitComplexAbs(PrimitiveType prim_type,
+                                                llvm::Value* operand_value);
+
+  virtual StatusOr<llvm::Value*> EmitSqrtComplexAbs(PrimitiveType prim_type,
+                                                    llvm::Value* operand_value);
+  virtual StatusOr<llvm::Value*> EmitRsqrtComplexAbs(
+      PrimitiveType prim_type, llvm::Value* operand_value);
+
+  virtual StatusOr<llvm::Value*> EmitComplexSqrt(const HloInstruction* op,
+                                                 PrimitiveType prim_type,
+                                                 llvm::Value* operand_value);
+
+  virtual StatusOr<llvm::Value*> EmitComplexCbrt(const HloInstruction* op,
+                                                 PrimitiveType prim_type,
+                                                 llvm::Value* operand_value);
+
+  virtual StatusOr<llvm::Value*> EmitComplexRsqrt(const HloInstruction* op,
+                                                  PrimitiveType prim_type,
+                                                  llvm::Value* operand_value);
 
   virtual llvm::Value* EmitExtractReal(llvm::Value* value);
   virtual llvm::Value* EmitExtractImag(llvm::Value* value);
@@ -202,6 +225,26 @@ class ElementalIrEmitter : public IrBuilderMixin<ElementalIrEmitter> {
       const HloToElementGeneratorMap& operand_to_generator,
       const llvm_ir::IrArray::Index& dot_result_index);
 
+  virtual StatusOr<std::vector<llvm::Value*>> EmitThreadLocalCall(
+      const HloComputation& callee, absl::Span<llvm::Value* const> parameters,
+      absl::string_view name) = 0;
+
+  StatusOr<llvm::Value*> EmitElementalMap(
+      const HloMapInstruction* map_instr,
+      absl::Span<llvm::Value* const> elemental_operands);
+
+  StatusOr<llvm::Value*> EmitElementalReduceWindow(
+      const HloReduceWindowInstruction* reduce_window,
+      const llvm_ir::ElementGenerator& input_generator,
+      const llvm_ir::ElementGenerator& initial_value_generator,
+      const llvm_ir::IrArray::Index& index);
+
+  StatusOr<llvm::Value*> EmitElementalReduce(
+      const HloReduceInstruction* reduce,
+      std::vector<llvm_ir::ElementGenerator> input_generators,
+      std::vector<llvm_ir::ElementGenerator> initial_value_generators,
+      const llvm_ir::IrArray::Index& index);
+
   llvm::IRBuilder<>* const b_;
 
   llvm::Module* module_;
@@ -215,21 +258,6 @@ class ElementalIrEmitter : public IrBuilderMixin<ElementalIrEmitter> {
   StatusOr<llvm::Value*> EmitComplexPower(const HloInstruction* op,
                                           llvm::Value* a, llvm::Value* b,
                                           llvm::Value* c, llvm::Value* d);
-
-  // Returns a ElementGenerator for an RNG HloInstruction using the Philox
-  // random number generation algorithm.
-  llvm_ir::ElementGenerator MakePhiloxRngElementGenerator(
-      const HloInstruction* hlo,
-      const HloToElementGeneratorMap& operand_to_generator);
-
-  // Converts the raw value generated by a random number generation algorithm
-  // to the distribution requested by the RNG HloInstruction.
-  //
-  // Precondition: raw_value has at least as many bits as hlo's element type.
-  StatusOr<llvm::Value*> ConvertValueForDistribution(
-      const HloInstruction* hlo,
-      const ElementalIrEmitter::HloToElementGeneratorMap& operand_to_generator,
-      const llvm_ir::IrArray::Index& index, llvm::Value* raw_value);
 };
 
 }  // namespace xla

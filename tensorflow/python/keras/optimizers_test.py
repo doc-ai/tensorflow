@@ -26,9 +26,12 @@ import numpy as np
 from tensorflow.python import keras
 from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
+from tensorflow.python.keras import keras_parameterized
 from tensorflow.python.keras import testing_utils
+from tensorflow.python.keras.utils import np_utils
 from tensorflow.python.platform import test
 from tensorflow.python.training.adam import AdamOptimizer
+from tensorflow.python.training.experimental.loss_scale_optimizer import MixedPrecisionLossScaleOptimizer
 
 
 def _get_model(input_dim, num_hidden, output_dim):
@@ -40,16 +43,23 @@ def _get_model(input_dim, num_hidden, output_dim):
   return model
 
 
-class KerasOptimizersTest(test.TestCase):
+@keras_parameterized.run_all_keras_modes
+class KerasOptimizersTest(keras_parameterized.TestCase):
 
   def _test_optimizer(self, optimizer, target=0.75):
+    if context.executing_eagerly():
+      self.skipTest(
+          'v1 optimizer does not run in eager mode')
     np.random.seed(1337)
     (x_train, y_train), _ = testing_utils.get_test_data(
         train_samples=1000, test_samples=200, input_shape=(10,), num_classes=2)
-    y_train = keras.utils.to_categorical(y_train)
+    y_train = np_utils.to_categorical(y_train)
     model = _get_model(x_train.shape[1], 20, y_train.shape[1])
     model.compile(
-        loss='categorical_crossentropy', optimizer=optimizer, metrics=['acc'])
+        loss='categorical_crossentropy',
+        optimizer=optimizer,
+        metrics=['acc'],
+        run_eagerly=testing_utils.should_run_eagerly())
     np.testing.assert_equal(
         keras.backend.get_value(model.optimizer.iterations), 0)
     history = model.fit(x_train, y_train, epochs=2, batch_size=16, verbose=0)
@@ -85,7 +95,8 @@ class KerasOptimizersTest(test.TestCase):
     model.compile(
         loss='categorical_crossentropy',
         optimizer=optimizer,
-        metrics=['accuracy'])
+        metrics=['accuracy'],
+        run_eagerly=testing_utils.should_run_eagerly())
     np.testing.assert_equal(
         keras.backend.get_value(model.optimizer.iterations),
         126)  # Using same optimizer from before
@@ -118,9 +129,9 @@ class KerasOptimizersTest(test.TestCase):
   def test_adadelta(self):
     with self.cached_session():
       self._test_optimizer(keras.optimizers.Adadelta(), target=0.6)
-      # Accuracy seems dependent on the initialization. Even adding tf.Print
-      # nodes in the graph seemed to affect the initialization seed, and hence
-      # the accuracy.
+      # Accuracy seems dependent on the initialization. Even adding
+      # tf.compat.v1.Print nodes in the graph seemed to affect the
+      # initialization seed, and hence the accuracy.
       self._test_optimizer(keras.optimizers.Adadelta(decay=1e-3), target=0.4)
 
   def test_adam(self):
@@ -151,12 +162,18 @@ class KerasOptimizersTest(test.TestCase):
           keras.optimizers.SGD(lr=0.01, momentum=0.9, clipvalue=0.5))
 
   def test_tf_optimizer(self):
+    if context.executing_eagerly():
+      self.skipTest(
+          'v1 optimizer does not run in eager mode')
     optimizer = keras.optimizers.TFOptimizer(AdamOptimizer(0.01))
     model = keras.models.Sequential()
     model.add(keras.layers.Dense(
         2, input_shape=(3,), kernel_constraint=keras.constraints.MaxNorm(1)))
     # This is possible
-    model.compile(loss='mean_squared_error', optimizer=optimizer)
+    model.compile(
+        loss='mean_squared_error',
+        optimizer=optimizer,
+        run_eagerly=testing_utils.should_run_eagerly())
     keras.backend.track_tf_optimizer(optimizer)
     model.fit(np.random.random((5, 3)),
               np.random.random((5, 2)),
@@ -172,6 +189,9 @@ class KerasOptimizersTest(test.TestCase):
       optimizer.from_config(None)
 
   def test_optimizer_garbage_collection(self):
+    if context.executing_eagerly():
+      self.skipTest(
+          'v1 optimizer does not run in eager mode')
     graph = ops.Graph()
     with graph.as_default():
       optimizer = keras.optimizers.TFOptimizer(AdamOptimizer(0.01))
@@ -185,12 +205,18 @@ class KerasOptimizersTest(test.TestCase):
     self.assertIs(optimizer_weak(), None)
 
   def test_tf_optimizer_iterations(self):
+    if context.executing_eagerly():
+      self.skipTest(
+          'v1 optimizer does not run in eager mode')
     with self.cached_session():
       optimizer = keras.optimizers.TFOptimizer(AdamOptimizer(0.01))
       model = keras.models.Sequential()
       model.add(keras.layers.Dense(
           2, input_shape=(3,), kernel_constraint=keras.constraints.MaxNorm(1)))
-      model.compile(loss='mean_squared_error', optimizer=optimizer)
+      model.compile(
+          loss='mean_squared_error',
+          optimizer=optimizer,
+          run_eagerly=testing_utils.should_run_eagerly())
       keras.backend.track_tf_optimizer(optimizer)
       self.assertEqual(keras.backend.get_value(model.optimizer.iterations), 0)
 
@@ -201,22 +227,35 @@ class KerasOptimizersTest(test.TestCase):
                 verbose=0)
       self.assertEqual(keras.backend.get_value(model.optimizer.iterations), 11)
 
-      if not context.executing_eagerly():
-        # TODO(kathywu): investigate why training with an array input and
-        # setting the argument steps_per_epoch does not work in eager mode.
-        model.fit(np.random.random((20, 3)),
-                  np.random.random((20, 2)),
-                  steps_per_epoch=8,
-                  verbose=0)
-        self.assertEqual(
-            keras.backend.get_value(model.optimizer.iterations), 19)
-
   def test_negative_clipvalue_or_clipnorm(self):
     with self.assertRaises(ValueError):
       _ = keras.optimizers.SGD(lr=0.01, clipvalue=-0.5)
     with self.assertRaises(ValueError):
       _ = keras.optimizers.Adam(clipnorm=-2.0)
 
+  def test_mixed_precision_loss_scale_optimizer(self):
+    if context.executing_eagerly():
+      self.skipTest('v1 optimizer does not run in eager mode')
+    optimizer = MixedPrecisionLossScaleOptimizer(AdamOptimizer(), 'dynamic')
+    model = keras.models.Sequential()
+    model.add(
+        keras.layers.Dense(
+            2, input_shape=(3,),
+            kernel_constraint=keras.constraints.MaxNorm(1)))
+    model.compile(
+        loss='mean_squared_error',
+        optimizer=optimizer,
+        run_eagerly=testing_utils.should_run_eagerly())
+    model.fit(
+        np.random.random((5, 3)),
+        np.random.random((5, 2)),
+        epochs=1,
+        batch_size=5,
+        verbose=0)
+
+  def test_deserialization_error(self):
+    with self.assertRaisesRegex(ValueError, 'Could not interpret optimizer'):
+      keras.optimizers.get(0)
 
 if __name__ == '__main__':
   test.main()

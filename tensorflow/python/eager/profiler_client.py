@@ -18,19 +18,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python import pywrap_tensorflow
-from tensorflow.python.framework import errors
+from tensorflow.python.profiler.internal import _pywrap_profiler
+from tensorflow.python.util.deprecation import deprecated
 
 
+@deprecated('2020-07-01', 'use `tf.profiler.experimental.client.trace`.')
 def start_tracing(service_addr,
                   logdir,
                   duration_ms,
                   worker_list='',
                   include_dataset_ops=True,
                   num_tracing_attempts=3):
-  """Sending grpc requests to profiler server to perform on-demand profiling.
+  """Sends grpc requests to profiler server to perform on-demand profiling.
 
-  Note: This method will block caller thread until receives tracing result.
+  This method will block caller thread until receives tracing result.
 
   Args:
     service_addr: Address of profiler service e.g. localhost:6009.
@@ -45,8 +46,28 @@ def start_tracing(service_addr,
   Raises:
     UnavailableError: If no trace event is collected.
   """
-  # TODO(fishx): Uses errors.raise_exception_on_not_ok_status instead.
-  if not pywrap_tensorflow.TFE_ProfilerClientStartTracing(
-      service_addr, logdir, worker_list, include_dataset_ops, duration_ms,
-      num_tracing_attempts):
-    raise errors.UnavailableError(None, None, 'No trace event is collected.')
+  _pywrap_profiler.trace(service_addr, logdir, worker_list, include_dataset_ops,
+                         duration_ms, num_tracing_attempts, {})
+
+
+@deprecated('2020-07-01', 'use `tf.profiler.experimental.client.monitor`.')
+def monitor(service_addr,
+            duration_ms,
+            monitoring_level=1,
+            display_timestamp=False):
+  """Sends grpc requests to profiler server to perform on-demand monitoring.
+
+  This method will block caller thread until receives monitoring result.
+
+  Args:
+    service_addr: Address of profiler service e.g. localhost:6009.
+    duration_ms: Duration of tracing or monitoring in ms.
+    monitoring_level: Choose a monitoring level between 1 and 2 to monitor your
+      job. Level 2 is more verbose than level 1 and shows more metrics.
+    display_timestamp: Set to true to display timestamp in monitoring result.
+
+  Returns:
+    A string of monitoring output.
+  """
+  return _pywrap_profiler.monitor(service_addr, duration_ms, monitoring_level,
+                                  display_timestamp)

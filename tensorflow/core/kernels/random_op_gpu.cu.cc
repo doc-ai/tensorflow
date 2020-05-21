@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
@@ -49,6 +49,18 @@ template struct FillPhiloxRandom<
 template struct FillPhiloxRandom<
     GPUDevice, random::UniformDistribution<random::PhiloxRandom, int64> >;
 template struct FillPhiloxRandom<
+    GPUDevice,
+    random::UniformFullIntDistribution<random::PhiloxRandom, int32> >;
+template struct FillPhiloxRandom<
+    GPUDevice,
+    random::UniformFullIntDistribution<random::PhiloxRandom, int64> >;
+template struct FillPhiloxRandom<
+    GPUDevice,
+    random::UniformFullIntDistribution<random::PhiloxRandom, uint32> >;
+template struct FillPhiloxRandom<
+    GPUDevice,
+    random::UniformFullIntDistribution<random::PhiloxRandom, uint64> >;
+template struct FillPhiloxRandom<
     GPUDevice, random::NormalDistribution<random::PhiloxRandom, Eigen::half> >;
 template struct FillPhiloxRandom<
     GPUDevice, random::NormalDistribution<random::PhiloxRandom, float> >;
@@ -68,4 +80,4 @@ template struct FillPhiloxRandom<
 }  // namespace functor
 }  // namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

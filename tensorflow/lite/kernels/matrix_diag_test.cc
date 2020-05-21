@@ -91,7 +91,7 @@ TEST(MatrixDiagTest, Int32TestTwoDimDiag) {
   EXPECT_THAT(model.GetOutputType(), TfLiteType::kTfLiteInt32);
 }
 
-TEST(MatrixDiagTest, DegenenerateCase) {
+TEST(MatrixDiagTest, DegenerateCase) {
   MatrixDiagOpModel<uint8_t> model({TensorType_UINT8, {1}});
   model.PopulateTensor<uint8_t>(model.input(), {1});
   model.Invoke();
@@ -102,9 +102,3 @@ TEST(MatrixDiagTest, DegenenerateCase) {
 
 }  // namespace
 }  // namespace tflite
-
-int main(int argc, char** argv) {
-  ::tflite::LogToStderr();
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}

@@ -18,8 +18,11 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/framework/dataset.h"
 #include "tensorflow/core/framework/function.h"
+#include "tensorflow/core/framework/model.h"
+#include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
@@ -35,6 +38,19 @@ class ResourceMgr;
 namespace data {
 
 class CapturedFunction;
+class InstantiatedCapturedFunction;
+
+// Creates an iterator for a dataset which is created by applying the given
+// function to the given input element.
+Status MakeIteratorFromInputElement(
+    IteratorContext* ctx, const IteratorBase* parent,
+    const std::vector<Tensor>& input_element, int64 thread_index,
+    const InstantiatedCapturedFunction& inst_captured_func, StringPiece prefix,
+    std::unique_ptr<IteratorBase>* out_iterator);
+
+// Determines whether the given node is stateful.
+Status IsNodeStateful(const FunctionLibraryDefinition& library,
+                      const NodeDef& node);
 
 // `InstantiatedCapturedFunction` encapsulates all the runtime support needed
 // to execute a tensorflow function.
@@ -69,6 +85,7 @@ class InstantiatedCapturedFunction {
   // possible. This can be useful for calling a captured
   // function in cases where an `IteratorContext*` is not available
   // (such as a destructor).
+  // TODO(b/144278100): Avoid running functions without IteratorContext.
   Status RunInstantiated(const std::vector<Tensor>& args,
                          std::vector<Tensor>* rets);
 
@@ -79,56 +96,120 @@ class InstantiatedCapturedFunction {
   void RunAsync(IteratorContext* ctx, std::vector<Tensor>&& args,
                 std::vector<Tensor>* rets,
                 FunctionLibraryRuntime::DoneCallback done,
-                const string& prefix) const;
-
-  // Returns a step ID for use when running an `InstantiatedCapturedFunction`.
-  static int64 generate_step_id() {
-    // Choose a step ID that is guaranteed not to clash with any
-    // Session-generated step ID. DirectSession only generates
-    // non-negative step IDs (contiguous, starting from 0), and
-    // MasterSession generates 56-bit random step IDs whose MSB is
-    // always 0, so a negative random step ID should suffice.
-    return -std::abs(static_cast<int64>(random::New64()));
-  }
+                const std::shared_ptr<model::Node>& node) const;
 
  private:
   InstantiatedCapturedFunction(
       FunctionLibraryRuntime* lib, FunctionLibraryRuntime::Handle f_handle,
       DataTypeVector ret_types,
       std::function<void(std::function<void()>)> runner,
-      CapturedFunction* captured_func);
+      CapturedFunction* captured_func, bool is_multi_device);
+
+  // Determines whether a rendezvous object should be created when running the
+  // instantiated function.
+  bool ShouldCreateRendezvous() const;
 
   friend class CapturedFunction;
 
   FunctionLibraryRuntime* const lib_;
   const FunctionLibraryRuntime::Handle f_handle_;
   const DataTypeVector ret_types_;
+  // Note: We capture the runner at function instantiation time to be able to
+  // run the function without `IteratorContext` via `RunInstantiated`.
   std::function<void(std::function<void()>)> captured_runner_;
   CapturedFunction* const captured_func_;
+  bool const is_multi_device_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(InstantiatedCapturedFunction);
+};
+
+struct ShortCircuitInfo {
+  std::vector<int> indices;
+  std::vector<bool> can_move;
+};
+
+// Metadata shared across all captures of the same function.
+class FunctionMetadata {
+ public:
+  struct Params {
+    bool use_inter_op_parallelism = true;
+    bool use_default_device = true;
+  };
+
+  // Creates a new instance of the `FunctionMetadata` class, fetching function
+  // from a context argument.
+  static Status Create(tensorflow::OpKernelConstruction* ctx,
+                       const string& func_name, Params params,
+                       std::shared_ptr<FunctionMetadata>* out_metadata);
+
+  // Creates a new instance of the `FunctionMetadata` class, using the provided
+  // function.
+  static Status Create(tensorflow::OpKernelConstruction* ctx,
+                       NameAttrList&& func, Params params,
+                       std::shared_ptr<FunctionMetadata>* out_metadata);
+
+  // Returns the named list of function arguments.
+  const NameAttrList& func() const { return func_; }
+
+  // Returns a borrowed pointer to the function library that contains the
+  // transitive closure of definitions used by the function.
+  const FunctionLibraryDefinition* lib_def() const { return lib_def_.get(); }
+
+  // Returns short-circuit information.
+  const ShortCircuitInfo& short_circuit_info() const {
+    return short_circuit_info_;
+  }
+
+  // Indicates whether a default device should be used for executing function
+  // ops.
+  bool use_default_device() const { return use_default_device_; }
+
+  // Indicates whether to use inter-op parallelism for execution of the
+  // function.
+  bool use_inter_op_parallelism() const { return use_inter_op_parallelism_; }
+
+  // Indicates whether the function should a multi-device function backend.
+  bool use_multi_device_function() const { return use_multi_device_function_; }
+
+ private:
+  FunctionMetadata(NameAttrList&& func, Params params)
+      : func_(std::move(func)),
+        use_default_device_(params.use_default_device),
+        use_inter_op_parallelism_(params.use_inter_op_parallelism) {}
+
+  NameAttrList func_;
+  std::unique_ptr<FunctionLibraryDefinition> lib_def_ = nullptr;
+  ShortCircuitInfo short_circuit_info_;
+  bool use_default_device_ = true;
+  bool use_inter_op_parallelism_ = true;
+  bool use_multi_device_function_ = true;
 };
 
 // A `CapturedFunction` encapsulates a TensorFlow function, plus any "captured"
 // arguments that it closed over in the user program.
 class CapturedFunction {
  public:
-  struct Params {
-    bool use_inter_op_parallelism = true;
-    bool is_multi_device_function = false;
-  };
-
   // Creates a new instance using a list of named attributes, fetching captured
   // inputs from a context argument.
-  static Status Create(const NameAttrList& func, OpKernelContext* ctx,
-                       const string& argument_name, Params params,
+  static Status Create(OpKernelContext* ctx,
+                       std::shared_ptr<const FunctionMetadata> metadata,
+                       const string& argument_name,
                        std::unique_ptr<CapturedFunction>* out_function);
 
   // Creates a new instance using a list of named attributes, using provided
   // captured inputs.
-  static Status Create(const NameAttrList& func, OpKernelContext* ctx,
-                       std::vector<Tensor>&& captured_inputs, Params params,
+  static Status Create(OpKernelContext* ctx,
+                       std::shared_ptr<const FunctionMetadata> metadata,
+                       std::vector<Tensor>&& captured_inputs,
                        std::unique_ptr<CapturedFunction>* out_function);
+
+  // Adds the definition of this captured function into the given graph,
+  // returning its captured inputs and types through the respective output
+  // arguments.
+  Status AddToGraph(SerializationContext* ctx,
+                    DatasetBase::DatasetGraphDefBuilder* b,
+                    std::vector<Node*>* other_arguments,
+                    DataTypeVector* other_arguments_types) const;
 
   // Instantiates this function for use in the given context, providing an
   // InstantiatedCapturedFunction that can be used to execute functions.
@@ -136,28 +217,51 @@ class CapturedFunction {
                      std::unique_ptr<InstantiatedCapturedFunction>*
                          instantiated_captured_function);
 
+  // Determines whether the captured function is stateful.
+  //
+  // TODO(jsimsa): Remove this method once all users of `CapturedFunction`
+  // migrate to `CheckExternalState`.
+  bool IsStateful() const;
+
+  // Determines whether the captured function is stateful.
+  Status CheckExternalState() const;
+
   // Returns the additional captured inputs that will be passed to the function.
   const std::vector<Tensor>& captured_inputs() const {
     return captured_inputs_;
   }
 
   // Returns the named list of function arguments.
-  const NameAttrList& func() const { return func_; }
+  const NameAttrList& func() const { return metadata_->func(); }
 
-  // Indicates whether the function is multi-device.
-  bool is_multi_device_function() const { return is_multi_device_function_; }
+  // Returns the transitive set of function definition required to instantiate
+  // this function.
+  const FunctionLibraryDefinition* lib_def() const {
+    return metadata_->lib_def();
+  }
+
+  // If every function output corresponds to one of its inputs, the method
+  // returns the mapping from output indices to input indices. Otherwise, it
+  // returns an empty list.
+  const ShortCircuitInfo& short_circuit_info() const {
+    return metadata_->short_circuit_info();
+  }
 
   // Indicates whether the function should use inter op parallelism.
-  bool use_inter_op_parallelism() const { return use_inter_op_parallelism_; }
+  bool use_inter_op_parallelism() const {
+    return metadata_->use_inter_op_parallelism();
+  }
 
  private:
-  CapturedFunction(const NameAttrList& func,
-                   std::vector<Tensor> captured_inputs, Params params);
+  CapturedFunction(std::shared_ptr<const FunctionMetadata> metadata,
+                   std::vector<Tensor> captured_inputs);
 
-  const NameAttrList func_;
+  // Determines whether the captured function requires the use of the
+  // multi-device function backend.
+  Status IsMultiDevice(IteratorContext* ctx, bool* is_multi_device);
+
+  const std::shared_ptr<const FunctionMetadata> metadata_;
   const std::vector<Tensor> captured_inputs_;
-  const bool use_inter_op_parallelism_;
-  const bool is_multi_device_function_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(CapturedFunction);
 };

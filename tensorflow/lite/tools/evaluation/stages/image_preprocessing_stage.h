@@ -16,48 +16,42 @@ limitations under the License.
 #define TENSORFLOW_LITE_TOOLS_EVALUATION_STAGES_IMAGE_PREPROCESSING_STAGE_H_
 
 #include <stdint.h>
+
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
+#include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/stats_calculator.h"
-#include "tensorflow/lite/c/c_api_internal.h"
 #include "tensorflow/lite/tools/evaluation/evaluation_stage.h"
 #include "tensorflow/lite/tools/evaluation/proto/evaluation_config.pb.h"
+#include "tensorflow/lite/tools/evaluation/proto/evaluation_stages.pb.h"
+#include "tensorflow/lite/tools/evaluation/proto/preprocessing_steps.pb.h"
 
 namespace tflite {
 namespace evaluation {
 
 // EvaluationStage to read contents of an image and preprocess it for inference.
 // Currently only supports JPEGs.
-// Input TAGs (Object Class): IMAGE_PATH (std::string*)
-// Output TAGs (Object Class): PREPROCESSED_IMAGE (pointer to image based on
-//                                                 output_type)
-// For more information on TAGs, please see EvaluationStageConfig proto.
 class ImagePreprocessingStage : public EvaluationStage {
  public:
   explicit ImagePreprocessingStage(const EvaluationStageConfig& config)
       : EvaluationStage(config) {}
 
-  bool Run(absl::flat_hash_map<std::string, void*>& object_map) override;
+  TfLiteStatus Init() override;
+
+  TfLiteStatus Run() override;
 
   EvaluationStageMetrics LatestMetrics() override;
 
-  ~ImagePreprocessingStage() {}
+  ~ImagePreprocessingStage() override {}
 
- protected:
-  bool DoInit(absl::flat_hash_map<std::string, void*>& object_map) override;
+  // Call before Run().
+  void SetImagePath(std::string* image_path) { image_path_ = image_path; }
 
-  std::vector<std::string> GetInitializerTags() override { return {}; }
-  std::vector<std::string> GetInputTags() override { return {kImagePathTag}; }
-  std::vector<std::string> GetOutputTags() override {
-    return {kPreprocessedImageTag};
-  }
+  // Provides preprocessing output.
+  void* GetPreprocessedImageData();
 
  private:
-  float cropping_fraction_;
-  float input_mean_value_;
-  float scale_;
-  int image_height_, image_width_, total_size_;
+  std::string* image_path_ = nullptr;
   TfLiteType output_type_;
   tensorflow::Stat<int64_t> latency_stats_;
 
@@ -65,12 +59,128 @@ class ImagePreprocessingStage : public EvaluationStage {
   std::vector<float> float_preprocessed_image_;
   std::vector<int8_t> int8_preprocessed_image_;
   std::vector<uint8_t> uint8_preprocessed_image_;
-
-  static const char kImagePathTag[];
-  static const char kPreprocessedImageTag[];
 };
 
-DECLARE_FACTORY(ImagePreprocessingStage);
+// Helper class to build a new ImagePreprocessingParams.
+class ImagePreprocessingConfigBuilder {
+ public:
+  ImagePreprocessingConfigBuilder(const std::string& name,
+                                  TfLiteType output_type) {
+    config_.set_name(name);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->set_output_type(static_cast<int>(output_type));
+  }
+
+  // Adds a cropping step with cropping fraction.
+  void AddCroppingStep(float cropping_fraction,
+                       bool use_square_cropping = false) {
+    ImagePreprocessingStepParams params;
+    params.mutable_cropping_params()->set_cropping_fraction(cropping_fraction);
+    params.mutable_cropping_params()->set_square_cropping(use_square_cropping);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a cropping step with target size.
+  void AddCroppingStep(uint32_t width, uint32_t height,
+                       bool use_square_cropping = false) {
+    ImagePreprocessingStepParams params;
+    params.mutable_cropping_params()->mutable_target_size()->set_height(height);
+    params.mutable_cropping_params()->mutable_target_size()->set_width(width);
+    params.mutable_cropping_params()->set_square_cropping(use_square_cropping);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a resizing step.
+  void AddResizingStep(uint32_t width, uint32_t height,
+                       bool aspect_preserving) {
+    ImagePreprocessingStepParams params;
+    params.mutable_resizing_params()->set_aspect_preserving(aspect_preserving);
+    params.mutable_resizing_params()->mutable_target_size()->set_height(height);
+    params.mutable_resizing_params()->mutable_target_size()->set_width(width);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a padding step.
+  void AddPaddingStep(uint32_t width, uint32_t height, int value) {
+    ImagePreprocessingStepParams params;
+    params.mutable_padding_params()->mutable_target_size()->set_height(height);
+    params.mutable_padding_params()->mutable_target_size()->set_width(width);
+    params.mutable_padding_params()->set_padding_value(value);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a square padding step.
+  void AddSquarePaddingStep(int value) {
+    ImagePreprocessingStepParams params;
+    params.mutable_padding_params()->set_square_padding(true);
+    params.mutable_padding_params()->set_padding_value(value);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a subtracting means step.
+  void AddPerChannelNormalizationStep(float r_mean, float g_mean, float b_mean,
+                                      float scale) {
+    ImagePreprocessingStepParams params;
+    params.mutable_normalization_params()->mutable_means()->set_r_mean(r_mean);
+    params.mutable_normalization_params()->mutable_means()->set_g_mean(g_mean);
+    params.mutable_normalization_params()->mutable_means()->set_b_mean(b_mean);
+    params.mutable_normalization_params()->set_scale(scale);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a normalization step.
+  void AddNormalizationStep(float mean, float scale) {
+    ImagePreprocessingStepParams params;
+    params.mutable_normalization_params()->set_channelwise_mean(mean);
+    params.mutable_normalization_params()->set_scale(scale);
+    config_.mutable_specification()
+        ->mutable_image_preprocessing_params()
+        ->mutable_steps()
+        ->Add(std::move(params));
+  }
+
+  // Adds a normalization step with default value.
+  void AddDefaultNormalizationStep() {
+    switch (
+        config_.specification().image_preprocessing_params().output_type()) {
+      case kTfLiteFloat32:
+        AddNormalizationStep(127.5, 1.0 / 127.5);
+        break;
+      case kTfLiteUInt8:
+        break;
+      case kTfLiteInt8:
+        AddNormalizationStep(128.0, 1.0);
+        break;
+      default:
+        LOG(ERROR) << "Type not supported";
+        break;
+    }
+  }
+
+  EvaluationStageConfig build() { return std::move(config_); }
+
+ private:
+  EvaluationStageConfig config_;
+};
 
 }  // namespace evaluation
 }  // namespace tflite

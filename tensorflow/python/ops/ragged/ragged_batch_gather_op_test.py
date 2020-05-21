@@ -30,12 +30,11 @@ from tensorflow.python.ops.ragged import ragged_batch_gather_ops
 from tensorflow.python.ops.ragged import ragged_batch_gather_with_default_op
 from tensorflow.python.ops.ragged import ragged_factory_ops
 from tensorflow.python.ops.ragged import ragged_tensor
-from tensorflow.python.ops.ragged import ragged_test_util
 from tensorflow.python.platform import googletest
 
 
 @test_util.run_all_in_graph_and_eager_modes
-class RaggedBatchGatherOpTest(ragged_test_util.RaggedTensorTestCase,
+class RaggedBatchGatherOpTest(test_util.TensorFlowTestCase,
                               parameterized.TestCase):
 
   @parameterized.parameters([
@@ -149,7 +148,7 @@ class RaggedBatchGatherOpTest(ragged_test_util.RaggedTensorTestCase,
   ])
   def testRaggedBatchGather(self, descr, params, indices, expected):
     result = ragged_batch_gather_ops.batch_gather(params, indices)
-    self.assertRaggedEqual(result, expected)
+    self.assertAllEqual(result, expected)
 
   @parameterized.parameters([
       # Docstring example:
@@ -359,7 +358,7 @@ class RaggedBatchGatherOpTest(ragged_test_util.RaggedTensorTestCase,
         expected, ragged_rank=expected_ragged_rank or ragged_rank)
     result = ragged_batch_gather_with_default_op.batch_gather_with_default(
         params, indices, default_value)
-    self.assertRaggedEqual(result, expected)
+    self.assertAllEqual(result, expected)
 
   @parameterized.parameters([
       # Dimensions:
@@ -477,12 +476,12 @@ class RaggedBatchGatherOpTest(ragged_test_util.RaggedTensorTestCase,
     ragged_indices = ragged_tensor.RaggedTensor.from_row_splits(
         indices, [0, 2, 4])
 
-    with self.assertRaisesRegexp(
-        ValueError, 'batch_gather does not allow indices with unknown shape.'):
+    with self.assertRaisesRegexp(ValueError, r'batch_dims may only be negative '
+                                 r'if rank\(indices\) is statically known.'):
       ragged_batch_gather_ops.batch_gather(params, indices)
 
-    with self.assertRaisesRegexp(
-        ValueError, 'batch_gather does not allow indices with unknown shape.'):
+    with self.assertRaisesRegexp(ValueError, r'batch_dims may only be negative '
+                                 r'if rank\(indices\) is statically known.'):
       ragged_batch_gather_ops.batch_gather(params, ragged_indices)
 
   @parameterized.parameters(
@@ -490,7 +489,7 @@ class RaggedBatchGatherOpTest(ragged_test_util.RaggedTensorTestCase,
           dict(
               params=ragged_factory_ops.constant_value([['a'], ['b'], ['c']]),
               indices=ragged_factory_ops.constant_value([[0], [0]]),
-              message='Dimensions 3 and 2 are not compatible'),
+              message=(r'batch shape from indices .* does not match params')),
           dict(
               params=[[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
               indices=ragged_factory_ops.constant_value([[[0, 0], [0, 0, 0]],
@@ -507,20 +506,21 @@ class RaggedBatchGatherOpTest(ragged_test_util.RaggedTensorTestCase,
                                                         [[0]], [[0]]]),
               indices=ragged_factory_ops.constant_value([[[0, 0]], [[0, 0, 0]],
                                                          [[0]]]),
-              error=errors.InvalidArgumentError,
-              message='.*Condition x == y did not hold.*'),
+              error=(ValueError, errors.InvalidArgumentError),
+              message=(r'batch shape from indices .* does not match '
+                       r'params shape|dimension size mismatch')),
           dict(
               params=ragged_factory_ops.constant_value(['a', 'b', 'c']),
               indices=ragged_factory_ops.constant_value([[0], [0]]),
-              message='batch shape from indices does not match params shape'),
+              message=r'batch_dims must be less than rank\(params\)'),
           dict(
               params=ragged_factory_ops.constant_value([['a']]),
               indices=0,
-              message='indices.rank must be at least 1.'),
+              message='batch_dims=-1 out of bounds: expected 0<=batch_dims<0'),
           dict(
               params=ragged_factory_ops.constant_value([['a']]),
               indices=[[[0]]],
-              message='batch shape from indices does not match params shape'),
+              message=r'batch_dims must be less than rank\(params\)'),
       ])
   def testRaggedBatchGatherStaticError(self,
                                        params,

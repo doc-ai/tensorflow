@@ -39,7 +39,7 @@ TEST(TocoTest, BadInputFormat) {
                "Unhandled input_format='FILE_FORMAT_UNKNOWN'");
 }
 
-TEST(TocoTest, MissingOuputArrays) {
+TEST(TocoTest, MissingOutputArrays) {
   TocoFlags toco_flags;
   ModelFlags model_flags;
 
@@ -132,6 +132,11 @@ TEST(TocoTest, TransientStringTensors) {
   // initialization code: output format must support memory planning, and the
   // input array must have a shape.
   toco_flags.set_output_format(TFLITE);
+
+  toco::InputArray* input_1 = model_flags.add_input_arrays();
+  input_1->set_name("input1");
+  toco::InputArray* indices_1 = model_flags.add_input_arrays();
+  indices_1->set_name("indices1");
 
   model_flags.add_output_arrays("output1");
   string input = R"GraphDef(

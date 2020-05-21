@@ -31,10 +31,13 @@ GCC_HOST_COMPILER_PATH = ('%{gcc_host_compiler_path}')
 HIPCC_PATH = '%{hipcc_path}'
 PREFIX_DIR = os.path.dirname(GCC_HOST_COMPILER_PATH)
 HIPCC_ENV = '%{hipcc_env}'
+HIPCC_IS_HIPCLANG = '%{hipcc_is_hipclang}'=="True"
 HIP_RUNTIME_PATH = '%{hip_runtime_path}'
 HIP_RUNTIME_LIBRARY = '%{hip_runtime_library}'
 HCC_RUNTIME_PATH = '%{hcc_runtime_path}'
 HCC_RUNTIME_LIBRARY = '%{hcc_runtime_library}'
+ROCR_RUNTIME_PATH = '%{rocr_runtime_path}'
+ROCR_RUNTIME_LIBRARY = '%{rocr_runtime_library}'
 VERBOSE = '%{crosstool_verbose}'=='1'
 
 def Log(s):
@@ -170,6 +173,13 @@ def InvokeHipcc(argv, log=False):
   out = ' -o ' + out_file[0]
 
   hipccopts = ' '
+  # In hip-clang environment, we need to make sure that hip header is included
+  # before some standard math header like <complex> is included in any source.
+  # Otherwise, we get build error.
+  # Also we need to retain warning about uninitialised shared variable as
+  # warning only, even when -Werror option is specified.
+  if HIPCC_IS_HIPCLANG:
+    hipccopts += ' --include=hip/hip_runtime.h '
   hipccopts += ' ' + hipcc_compiler_options
   # Use -fno-gpu-rdc by default for early GPU kernel finalization
   # This flag would trigger GPU kernels be generated at compile time, instead
@@ -200,8 +210,11 @@ def InvokeHipcc(argv, log=False):
 
   # TODO(zhengxq): for some reason, 'gcc' needs this help to find 'as'.
   # Need to investigate and fix.
-  cmd = 'PATH=' + PREFIX_DIR + ':$PATH ' + cmd
+  cmd = 'PATH=' + PREFIX_DIR + ':$PATH '\
+        + HIPCC_ENV.replace(';', ' ') + ' '\
+        + cmd
   if log: Log(cmd)
+  if VERBOSE: print(cmd)
   return os.system(cmd)
 
 
@@ -209,11 +222,14 @@ def main():
   # ignore PWD env var
   os.environ['PWD']=''
 
-  parser = ArgumentParser()
+  parser = ArgumentParser(fromfile_prefix_chars='@')
   parser.add_argument('-x', nargs=1)
   parser.add_argument('--rocm_log', action='store_true')
   parser.add_argument('-pass-exit-codes', action='store_true')
   args, leftover = parser.parse_known_args(sys.argv[1:])
+
+  if VERBOSE: print('PWD=' + os.getcwd())
+  if VERBOSE: print('HIPCC_ENV=' + HIPCC_ENV)
 
   if args.x and args.x[0] == 'rocm':
     # compilation for GPU objects
@@ -231,12 +247,19 @@ def main():
     gpu_linker_flags = [flag for flag in sys.argv[1:]
                                if not flag.startswith(('--rocm_log'))]
 
-    gpu_linker_flags.append('-L' + HCC_RUNTIME_PATH)
-    gpu_linker_flags.append('-Wl,-rpath=' + HCC_RUNTIME_PATH)
-    gpu_linker_flags.append('-l' + HCC_RUNTIME_LIBRARY)
+    gpu_linker_flags.append('-L' + ROCR_RUNTIME_PATH)
+    gpu_linker_flags.append('-Wl,-rpath=' + ROCR_RUNTIME_PATH)
+    gpu_linker_flags.append('-l' + ROCR_RUNTIME_LIBRARY)
+    # do not link with HCC runtime library in case hip-clang toolchain is used
+    if not HIPCC_IS_HIPCLANG:
+      gpu_linker_flags.append('-L' + HCC_RUNTIME_PATH)
+      gpu_linker_flags.append('-Wl,-rpath=' + HCC_RUNTIME_PATH)
+      gpu_linker_flags.append('-l' + HCC_RUNTIME_LIBRARY)
     gpu_linker_flags.append('-L' + HIP_RUNTIME_PATH)
     gpu_linker_flags.append('-Wl,-rpath=' + HIP_RUNTIME_PATH)
     gpu_linker_flags.append('-l' + HIP_RUNTIME_LIBRARY)
+    if HIPCC_IS_HIPCLANG:
+      gpu_linker_flags.append("-lrt")
 
     if VERBOSE: print(' '.join([CPU_COMPILER] + gpu_linker_flags))
     return subprocess.call([CPU_COMPILER] + gpu_linker_flags)

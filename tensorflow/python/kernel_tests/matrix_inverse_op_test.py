@@ -74,7 +74,6 @@ class InverseOpTest(test.TestCase):
     self._verifyInverseReal(matrix2)
     # A multidimensional batch of 2x2 matrices
     self._verifyInverseReal(self._makeBatch(matrix1, matrix2))
-    # Complex
     matrix1 = matrix1.astype(np.complex64)
     matrix1 += 1j * matrix1
     matrix2 = matrix2.astype(np.complex64)
@@ -92,7 +91,6 @@ class InverseOpTest(test.TestCase):
     self._verifyInverseReal(matrix2)
     # A multidimensional batch of 2x2 matrices
     self._verifyInverseReal(self._makeBatch(matrix1, matrix2))
-    # Complex
     matrix1 = matrix1.astype(np.complex64)
     matrix1 += 1j * matrix1
     matrix2 = matrix2.astype(np.complex64)

@@ -61,6 +61,7 @@ XlaOpRegistry::~XlaOpRegistry() = default;
 /* static */ bool XlaOpRegistry::IsCompatible(const OpRegistration& x,
                                               const OpRegistration& y) {
   if (x.name != y.name) return true;
+  if (x.label != y.label) return true;
   // The registrations refer to the same Op: ensures they are compatible and
   // are restricted to different device whitelists.
   if (x.compilation_only != y.compilation_only) {
@@ -153,7 +154,6 @@ XlaOpRegistry::~XlaOpRegistry() = default;
           cpu_global_jit
               ? XlaOpRegistry::AutoclusteringPolicy::kIfEnabledGlobally
               : XlaOpRegistry::AutoclusteringPolicy::kIfExplicitlyRequested;
-      registration.compile_all_resource_ops = false;
     }
     if (LaunchOpHasKernelForDevice(DeviceType(DEVICE_GPU)).ok()) {
       DeviceRegistration& registration =
@@ -161,7 +161,6 @@ XlaOpRegistry::~XlaOpRegistry() = default;
       registration.compilation_device_name = DEVICE_GPU_XLA_JIT;
       registration.autoclustering_policy =
           XlaOpRegistry::AutoclusteringPolicy::kIfEnabledGlobally;
-      registration.compile_all_resource_ops = false;
     }
     return nullptr;
   }();
@@ -258,6 +257,7 @@ void XlaOpRegistry::RegisterCompilationKernels() {
         std::unique_ptr<KernelDef> kdef(new KernelDef);
         kdef->set_op(op_registration->name);
         kdef->set_device_type(backend.first);
+        kdef->set_label(op_registration->label);
 
         // Constrain each type attribute to the intersection of:
         // a) the types supported by the backend, and
@@ -541,6 +541,11 @@ XlaOpRegistrationBuilder& XlaOpRegistrationBuilder::IsMetadataOp() {
   return *this;
 }
 
+XlaOpRegistrationBuilder& XlaOpRegistrationBuilder::Label(std::string label) {
+  registration_->label = label;
+  return *this;
+}
+
 std::unique_ptr<XlaOpRegistry::OpRegistration> XlaOpRegistrationBuilder::Build(
     XlaOpRegistry::Factory factory) {
   registration_->factory = factory;
@@ -567,6 +572,8 @@ XlaBackendRegistrar::XlaBackendRegistrar(
     XlaOpRegistry::BackendOpFilter op_filter) {
   XlaOpRegistry& registry = XlaOpRegistry::Instance();
   registry.RegisterBackend(string(name), types, op_filter);
+
+  AddSymbolicExecutionDevice(name);
 }
 
 }  // namespace tensorflow

@@ -17,7 +17,9 @@ limitations under the License.
 #define TENSORFLOW_CORE_TPU_TPU_EMBEDDING_OPTIMIZATION_PARAMETERS_UTILS_H_
 
 #include <string>
+
 #include "absl/base/casts.h"
+#include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/tpu/optimization_parameters.pb.h"
 
@@ -38,9 +40,6 @@ std::vector<OptimizationAlgorithm> GetOptimizationAlgorithms();
 enum class GradientAccumulationSupport {
   // Accumulation cannot be used with this optimizer.
   kNotSupported,
-
-  // Accumulation is unnecessary because optimizer application is commutative.
-  kUnnecessary,
 
   // Accumulation is allowed and changes optimizer behavior.
   kSupported,
@@ -82,7 +81,48 @@ static constexpr int kMaxAuxiliaryParameterCount = 3;
 // not no-ops on zero gradients, so we need to distinguish an accumulated
 // gradient of zero from one that has been cleared after its gradients have
 // already been applied to the parameters and accumulators.
-const float kGradientAccumulatorInitialValue = absl::bit_cast<float, uint32>(1);
+inline float GradientAccumulatorInitialValue() {
+  return absl::bit_cast<float, uint32>(1);
+}
+
+// Returns whether an optimization algorithm is only supported internally.
+// Returns an error if the algorithm is not recognized at all.
+Status IsOptimizationAlgorithmInternal(OptimizationAlgorithm alg,
+                                       bool *internal);
+
+// Generic shape function for per-optimization-algorithm load ops.
+class LoadOpShapeFunction {
+ public:
+  // Constructor.
+  LoadOpShapeFunction(OptimizationAlgorithm alg, bool is_debug_op);
+
+  // Computes resulting shape and does parameter checking.
+  Status operator()(shape_inference::InferenceContext *c) const;
+
+ private:
+  // Optimization algorithm.
+  const OptimizationAlgorithm alg_;
+
+  // Whether this op has an extra parameter for the gradient accumulators.
+  const bool is_debug_op_;
+};
+
+// Generic shape function for per-optimization-algorithm retrieve ops.
+class RetrieveOpShapeFunction {
+ public:
+  // Constructor.
+  RetrieveOpShapeFunction(OptimizationAlgorithm alg, bool is_debug_op);
+
+  // Computes resulting shape and does parameter checking.
+  Status operator()(shape_inference::InferenceContext *c) const;
+
+ private:
+  // Optimization algorithm.
+  const OptimizationAlgorithm alg_;
+
+  // Whether this op has an extra parameter for the gradient accumulators.
+  const bool is_debug_op_;
+};
 
 }  // namespace tpu
 }  // namespace tensorflow

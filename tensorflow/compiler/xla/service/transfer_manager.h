@@ -22,6 +22,7 @@ limitations under the License.
 
 #include "absl/types/span.h"
 #include "tensorflow/compiler/xla/literal.h"
+#include "tensorflow/compiler/xla/service/executable.h"
 #include "tensorflow/compiler/xla/service/shaped_buffer.h"
 #include "tensorflow/compiler/xla/statusor.h"
 #include "tensorflow/compiler/xla/types.h"
@@ -30,6 +31,7 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor_no_cuda.h"
 #include "tensorflow/core/platform/thread_annotations.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/stream_executor/device_memory.h"
 
 namespace xla {
 
@@ -210,17 +212,29 @@ class TransferManager {
   // rather than writing all subbuffers. This method is always asynchronous.
   Status WriteRootTupleIndexTable(se::Stream* stream,
                                   const ShapedBuffer& device_buffer);
+  Status WriteRootTupleIndexTable(
+      se::Stream* stream,
+      const ShapeTree<MaybeOwningDeviceMemory>& buffer_tree);
 
   // Determines the byte size requirement for the given shape on the underlying
   // architecture. This will be used to allocate an appropriately sized memory
   // region for a host-to-device transfer.
   virtual int64 GetByteSizeRequirement(const Shape& shape) const = 0;
 
+  // Chooses a compact layout for 'shape', ignoring any existing layout on
+  // 'shape'. What "reasonable" means is left up to the backend. The
+  // intended use case is to choose a layout that avoids excessive padding on
+  // devices that have tiled memory architectures.
+  // The default implementation always picks a default (major-to-minor) layout.
+  // Fails if 'shape' cannot be represented by the device.
+  virtual StatusOr<Shape> ChooseCompactLayoutForShape(
+      const Shape& host_shape) const;
+
   // Allocates a ScopedShapedBuffer which can hold data with the given on-host
   // shape. The on-device shape may be different as indicated by
   // HostShapeToDeviceShape.
   StatusOr<ScopedShapedBuffer> AllocateScopedShapedBuffer(
-      const Shape& on_host_shape, DeviceMemoryAllocator* allocator,
+      const Shape& on_host_shape, se::DeviceMemoryAllocator* allocator,
       int device_ordinal);
 
   // The given ShapedBuffer holds a handle to allocated memory, but it is not
@@ -243,6 +257,13 @@ class TransferManager {
     return false;
   }
 
+  // Equivalent to CanShapedBufferBeAccessedNow but for a single device buffer.
+  virtual bool CanBufferBeAccessedNow(
+      se::StreamExecutor* executor,
+      const se::DeviceMemoryBase& device_buffer) const {
+    return false;
+  }
+
   /////
   // The TransferManager class also serves as a point to register objects for
   // the various platforms.
@@ -261,6 +282,13 @@ class TransferManager {
   static StatusOr<TransferManager*> GetForPlatform(
       const se::Platform* platform);
 
+  // Writes the given device-memory pointers in 'elements' to the given region
+  // to construct a tuple index table in the platform-specific tuple
+  // representation.
+  virtual Status WriteSingleTupleIndexTable(
+      se::Stream* stream, absl::Span<const se::DeviceMemoryBase> elements,
+      const Shape& shape, se::DeviceMemoryBase* region) = 0;
+
  protected:
   // Transfer a memory block of the given size from the device source into the
   // 'destination' buffer.
@@ -277,13 +305,6 @@ class TransferManager {
   virtual Status TransferBufferToDevice(se::Stream* stream, int64 size,
                                         const void* source,
                                         se::DeviceMemoryBase* destination);
-
-  // Writes the given device-memory pointers in 'elements' to the given region
-  // to construct a tuple index table in the platform-specific tuple
-  // representation.
-  virtual Status WriteSingleTupleIndexTable(
-      se::Stream* stream, absl::Span<const se::DeviceMemoryBase> elements,
-      const Shape& shape, se::DeviceMemoryBase* region) = 0;
 
  private:
   // The mutex that guards the platform-to-transfer manager map.

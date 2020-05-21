@@ -17,7 +17,10 @@ limitations under the License.
 #define TENSORFLOW_CORE_GRAPPLER_COSTS_GRAPH_PROPERTIES_H_
 
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include "absl/container/flat_hash_map.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/grappler/clusters/cluster.h"
 #include "tensorflow/core/grappler/costs/op_performance_data.pb.h"
@@ -89,11 +92,27 @@ class GraphProperties {
   // output values when possible and does other aggressive strategies.
   // Similar to assuming_valid_feeds, this may cause incorrectness in graph
   // analyses, but is useful for simulation or scheduling.
+  // If include_input_tensor_values is true, the values of constant tensors
+  // will included in the input properties.
+  // If include_output_tensor_values is true, the values of constant tensors
+  // will be included in the output properties.
   Status InferStatically(bool assume_valid_feeds,
-                         bool aggressive_shape_inference);
+                         bool aggressive_shape_inference,
+                         bool include_input_tensor_values,
+                         bool include_output_tensor_values);
+  Status InferStatically(bool assume_valid_feeds,
+                         bool aggressive_shape_inference,
+                         bool include_tensor_values) {
+    return InferStatically(
+        assume_valid_feeds,
+        /*aggressive_shape_inference=*/aggressive_shape_inference,
+        /*include_input_tensor_values=*/include_tensor_values,
+        /*include_output_tensor_values=*/include_tensor_values);
+  }
   Status InferStatically(bool assume_valid_feeds) {
     return InferStatically(assume_valid_feeds,
-                           /*aggressive_shape_inference=*/false);
+                           /*aggressive_shape_inference=*/false,
+                           /*include_tensor_values=*/true);
   }
   // Infer the shape by running the graph on the specified cluster and recording
   // the shapes of the processed tensors.
@@ -103,7 +122,12 @@ class GraphProperties {
   Status InferFromCostGraph(const CostGraphDef& cost_graph);
 
   // Stores `item_.graph` with the inferred output shapes to `output_graph_def`.
-  Status AnnotateOutputShapes(GraphDef* output_graph_def) const;
+  Status AnnotateOutputShapes(GraphDef* output_graph_def,
+                              bool allow_symbolic_shapes) const;
+
+  Status AnnotateOutputShapes(GraphDef* output_graph_def) const {
+    return AnnotateOutputShapes(output_graph_def, false);
+  }
 
   // Return the properties of node inputs/outputs, including data types and
   // shapes. Note that the dimensions in the shapes can be negative. We use the
@@ -117,6 +141,7 @@ class GraphProperties {
       const string& node_name) const;
   const std::vector<OpInfo::TensorProperties>& GetOutputProperties(
       const string& node_name) const;
+
   // Invalidate input/output properties for nodes modified during graph
   // optimization pass, to prevent potential optimizations, based on incorrect
   // shape information.
@@ -124,7 +149,12 @@ class GraphProperties {
   void ClearOutputProperties(const string& node_name);
   // Returns true if we have *any* properties.
   bool has_properties() const {
-    return input_properties_.size() > 0 || output_properties_.size() > 0;
+    return !input_properties_.empty() || !output_properties_.empty();
+  }
+
+  bool CheckShapeIncompatible(const string& node_name) const {
+    return incompatible_shape_nodes_.find(node_name) !=
+           incompatible_shape_nodes_.end();
   }
 
  private:
@@ -139,7 +169,7 @@ class GraphProperties {
   // queue, and schedule the reprocessing of the queue if needed.
   static Status UpdateEnqueue(
       const NodeDef* enqueue_node,
-      const std::unordered_map<const NodeDef*, const NodeDef*>&
+      const absl::flat_hash_map<const NodeDef*, const NodeDef*>&
           resource_handles,
       SymbolicShapeRefiner* shape_refiner, bool* new_shapes);
 
@@ -158,25 +188,35 @@ class GraphProperties {
   // Update the shapes for node 'n'. If output shapes for n have changed,
   // enqueue its fanout in 'new_shapes'.
   Status UpdateShapes(SymbolicShapeRefiner* shape_refiner,
-                      const std::unordered_map<const NodeDef*, const NodeDef*>&
+                      const absl::flat_hash_map<const NodeDef*, const NodeDef*>&
                           resource_handles,
                       const NodeDef* n, bool* new_shapes) const;
   // Propagate the shapes for the nodes enqueued in new_shapes and their
   // transitive fanout until a fixed point is reached.
   Status PropagateShapes(
       SymbolicShapeRefiner* shape_refiner, TopoQueue* new_shapes,
-      const std::unordered_map<const NodeDef*, const NodeDef*>&
+      const absl::flat_hash_map<const NodeDef*, const NodeDef*>&
           resource_handles,
       int num_loops) const;
 
   // Data members
   const GrapplerItem& item_;
-  std::unordered_map<string, std::vector<OpInfo::TensorProperties>>
+  absl::flat_hash_map<string, std::vector<OpInfo::TensorProperties>>
       input_properties_;
-  std::unordered_map<string, std::vector<OpInfo::TensorProperties>>
+  absl::flat_hash_map<string, std::vector<OpInfo::TensorProperties>>
       output_properties_;
   const std::vector<OpInfo::TensorProperties> missing_properties_;
+
+  // Nodes with output shape incompatible between shape inference and
+  // annotation.
+  std::unordered_set<string> incompatible_shape_nodes_;
 };
+
+// Helper function for GraphProperties.
+bool IsShapeFullyDefinedIntegerVectorOrScalar(
+    shape_inference::InferenceContext* ic,
+    const shape_inference::ShapeHandle& shape,
+    const shape_inference::ShapeHandle& tensor_as_shape, const DataType& dtype);
 
 }  // end namespace grappler
 }  // end namespace tensorflow

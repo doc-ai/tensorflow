@@ -14,10 +14,13 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/framework/function.h"
+
 #include <vector>
+
 #include "tensorflow/core/framework/function.pb.h"
 #include "tensorflow/core/framework/function_testlib.h"
 #include "tensorflow/core/framework/op.h"
+#include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
@@ -556,7 +559,7 @@ TEST(TFunc, IntsOnDeviceArgSet) {
 }
 
 static void HasError(const Status& s, const string& substr) {
-  EXPECT_TRUE(str_util::StrContains(s.ToString(), substr))
+  EXPECT_TRUE(absl::StrContains(s.ToString(), substr))
       << ">>" << s << "<<, expected substring >>" << substr << "<<";
 }
 
@@ -909,9 +912,9 @@ TEST(FunctionCallFrame, Void_Void) {
   TF_EXPECT_OK(frame.SetArgs({}));
   auto a = test::AsTensor<float>({100});
   HasError(frame.SetArgs({a}), "Invalid argument");
-  Tensor v;
+  const Tensor* v;
   HasError(frame.GetArg(0, &v), "Invalid argument");
-  HasError(frame.SetRetval(0, v), "Invalid argument");
+  HasError(frame.SetRetval(0, *v), "Invalid argument");
   std::vector<Tensor> rets;
   TF_EXPECT_OK(frame.GetRetvals(&rets));
   EXPECT_EQ(rets.size(), 0);
@@ -927,28 +930,28 @@ TEST(FunctionCallFrame, Float_Float_Float) {
            "Invalid argument: Expects arg[1] to be float");
   TF_EXPECT_OK(frame.SetArgs({a, b}));
 
-  Tensor v;
+  const Tensor* v;
   HasError(frame.GetArg(-1, &v), "Invalid argument");
   HasError(frame.GetArg(2, &v), "Invalid argument");
   TF_EXPECT_OK(frame.GetArg(0, &v));
-  test::ExpectTensorEqual<float>(a, v);
+  test::ExpectTensorEqual<float>(a, *v);
   TF_EXPECT_OK(frame.GetArg(1, &v));
-  test::ExpectTensorEqual<float>(b, v);
+  test::ExpectTensorEqual<float>(b, *v);
 
-  v = test::AsTensor<float>({-100});
-  HasError(frame.SetRetval(-1, v), "Invalid argument");
-  HasError(frame.SetRetval(1, v), "Invalid argument");
+  Tensor w = test::AsTensor<float>({-100});
+  HasError(frame.SetRetval(-1, w), "Invalid argument");
+  HasError(frame.SetRetval(1, w), "Invalid argument");
   HasError(frame.SetRetval(0, test::AsTensor<int64>({-100})),
            "Invalid argument: Expects ret[0] to be float");
 
   std::vector<Tensor> rets;
   HasError(frame.GetRetvals(&rets), "does not have value");
-  TF_EXPECT_OK(frame.SetRetval(0, v));
-  HasError(frame.SetRetval(0, v), "has already been set");
+  TF_EXPECT_OK(frame.SetRetval(0, *v));
+  HasError(frame.SetRetval(0, *v), "has already been set");
 
   TF_EXPECT_OK(frame.GetRetvals(&rets));
   EXPECT_EQ(rets.size(), 1);
-  test::ExpectTensorEqual<float>(rets[0], v);
+  test::ExpectTensorEqual<float>(rets[0], *v);
 }
 
 TEST(Canonicalize, Basic) {
@@ -974,21 +977,6 @@ TEST(FunctionLibraryDefinitionTest, Contains) {
   EXPECT_TRUE(lib_def.Contains("XTimesTwo"));
 }
 
-TEST(FunctionLibraryDefinitionOverlayTest, Contains) {
-  FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  EXPECT_FALSE(lib_def.Contains("XTimes16"));
-  EXPECT_TRUE(lib_def.Contains("XTimesTwo"));
-  EXPECT_FALSE(lib_def.Contains("XTimesFour"));
-
-  EXPECT_FALSE(overlay.Contains("XTimes16"));
-  EXPECT_TRUE(overlay.Contains("XTimesTwo"));
-  EXPECT_TRUE(overlay.Contains("XTimesFour"));
-}
-
 TEST(FunctionLibraryDefinitionTest, Find) {
   FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
   TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
@@ -998,22 +986,6 @@ TEST(FunctionLibraryDefinitionTest, Find) {
   auto found = lib_def.Find("XTimesTwo");
   ASSERT_NE(found, nullptr);
   EXPECT_EQ(test::function::XTimesTwo().DebugString(), found->DebugString());
-}
-
-TEST(FunctionLibraryDefinitionOverlayTest, Find) {
-  FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  EXPECT_EQ(lib_def.Find("XTimes16"), nullptr);
-
-  for (auto fdef :
-       {test::function::XTimesTwo(), test::function::XTimesFour()}) {
-    auto found = overlay.Find(fdef.signature().name());
-    ASSERT_NE(found, nullptr);
-    EXPECT_EQ(fdef.DebugString(), found->DebugString());
-  }
 }
 
 TEST(FunctionLibraryDefinitionTest, LookUp) {
@@ -1033,29 +1005,6 @@ TEST(FunctionLibraryDefinitionTest, LookUp) {
   ASSERT_NE(op_reg_data, nullptr);
   // Shape inference function is initialized to UnknownShape.
   ASSERT_NE(op_reg_data->shape_inference_fn, nullptr);
-}
-
-TEST(FunctionLibraryDefinitionOverlayTest, LookUp) {
-  FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  const OpDef* op_def;
-  EXPECT_FALSE(overlay.LookUpOpDef("XTimes16", &op_def).ok());
-
-  for (auto fdef :
-       {test::function::XTimesTwo(), test::function::XTimesFour()}) {
-    TF_EXPECT_OK(overlay.LookUpOpDef(fdef.signature().name(), &op_def));
-    ASSERT_NE(op_def, nullptr);
-    EXPECT_EQ(op_def->DebugString(), fdef.signature().DebugString());
-
-    const OpRegistrationData* op_reg_data;
-    TF_EXPECT_OK(overlay.LookUp("XTimesTwo", &op_reg_data));
-    ASSERT_NE(op_reg_data, nullptr);
-    // Shape inference function is initialized to UnknownShape.
-    ASSERT_NE(op_reg_data->shape_inference_fn, nullptr);
-  }
 }
 
 TEST(FunctionLibraryDefinitionTest, AddFunctionDef) {
@@ -1080,39 +1029,6 @@ TEST(FunctionLibraryDefinitionTest, AddFunctionDef) {
 
   // Test that adding the same functions again does not produce an error.
   TF_EXPECT_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-}
-
-TEST(FunctionLibraryDefinitionOverlayTest, AddFunctionDef) {
-  FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  // Test lookup of existing functions.
-  for (auto fdef :
-       {test::function::XTimesTwo(), test::function::XTimesFour()}) {
-    const OpDef* op_def;
-    TF_EXPECT_OK(overlay.LookUpOpDef(fdef.signature().name(), &op_def));
-    ASSERT_NE(op_def, nullptr);
-    EXPECT_EQ(op_def->DebugString(), fdef.signature().DebugString());
-  }
-
-  // Test that adding a function with same name as existing op fails.
-  for (auto fdef :
-       {test::function::XTimesTwo(), test::function::XTimesFour()}) {
-    fdef.mutable_signature()->set_name("Add");
-    Status s = overlay.AddFunctionDef(fdef);
-    EXPECT_FALSE(s.ok());
-    EXPECT_EQ(s.error_message(),
-              "Cannot add function 'Add' because an op with the same name "
-              "already exists.");
-  }
-
-  // Test that adding the same functions again does not produce an error.
-  for (auto fdef :
-       {test::function::XTimesTwo(), test::function::XTimesFour()}) {
-    TF_EXPECT_OK(overlay.AddFunctionDef(fdef));
-  }
 }
 
 TEST(FunctionLibraryDefinitionTest, AddGradientDef) {
@@ -1150,32 +1066,6 @@ TEST(FunctionLibraryDefinitionTest, RemoveFunction) {
   EXPECT_TRUE(lib_def.Contains("XTimesTwo"));
   TF_EXPECT_OK(lib_def.RemoveFunction("XTimesTwo"));
   EXPECT_FALSE(lib_def.Contains("XTimesTwo"));
-}
-
-TEST(FunctionLibraryDefinitionOverlayTest, RemoveFunction) {
-  FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  {
-    Status s = overlay.RemoveFunction("XTimes16");
-    EXPECT_FALSE(s.ok());
-    EXPECT_EQ(s.error_message(),
-              "Tried to remove non-existent function 'XTimes16'.");
-  }
-
-  {
-    Status s = overlay.RemoveFunction("XTimesTwo");
-    EXPECT_FALSE(s.ok());
-    EXPECT_EQ(s.error_message(),
-              "Cannot remove function 'XTimesTwo' because it is part of the "
-              "immutable base of an overlay.");
-  }
-
-  EXPECT_TRUE(overlay.Contains("XTimesFour"));
-  TF_EXPECT_OK(overlay.RemoveFunction("XTimesFour"));
-  EXPECT_FALSE(overlay.Contains("XTimesFour"));
 }
 
 TEST(FunctionLibraryDefinitionTest, AddLibrary) {
@@ -1363,28 +1253,6 @@ TEST(FunctionLibraryDefinitionTest, ToProto) {
   }
 }
 
-TEST(FunctionLibraryDefinitionOverlayTest, ToProto) {
-  FunctionLibraryDefinition lib_def1(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def1.AddFunctionDef(test::function::XTimesTwo()));
-  TF_CHECK_OK(lib_def1.AddFunctionDef(test::function::WXPlusB()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def1);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  FunctionDefLibrary proto = overlay.ToProto();
-  EXPECT_EQ(proto.function_size(), 3);
-
-  // Initialize 'lib_def2' with proto returned by 'ToProto' call.
-  FunctionLibraryDefinition lib_def2(OpRegistry::Global(), proto);
-
-  // Test that the functions exists in both libraries.
-  for (auto name : {"XTimesTwo", "WXPlusB", "XTimesFour"}) {
-    const OpDef *f1, *f2;
-    TF_EXPECT_OK(overlay.LookUpOpDef(name, &f1));
-    TF_EXPECT_OK(lib_def2.LookUpOpDef(name, &f2));
-    EXPECT_EQ(f1->DebugString(), f2->DebugString());
-  }
-}
-
 TEST(FunctionLibraryDefinitionTest, ListFunctionNames) {
   FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
   TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
@@ -1392,18 +1260,6 @@ TEST(FunctionLibraryDefinitionTest, ListFunctionNames) {
 
   const std::vector<string> function_names = lib_def.ListFunctionNames();
   const std::vector<string> expected = {"XTimesTwo", "WXPlusB"};
-  EXPECT_EQ(function_names, expected);
-}
-
-TEST(FunctionLibraryDefinitionOverlayTest, ListFunctionNames) {
-  FunctionLibraryDefinition lib_def(OpRegistry::Global(), {});
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::XTimesTwo()));
-  TF_CHECK_OK(lib_def.AddFunctionDef(test::function::WXPlusB()));
-  FunctionLibraryDefinitionOverlay overlay(&lib_def);
-  TF_CHECK_OK(overlay.AddFunctionDef(test::function::XTimesFour()));
-
-  const std::vector<string> function_names = overlay.ListFunctionNames();
-  const std::vector<string> expected = {"XTimesTwo", "WXPlusB", "XTimesFour"};
   EXPECT_EQ(function_names, expected);
 }
 
@@ -1617,6 +1473,60 @@ TEST(FunctionDefsEqualTest, TestFunctionDefsEqual) {
   SetAttrValue(&fdef3, "Baz", "abc");
   EXPECT_TRUE(FunctionDefsEqual(fdef2, fdef3));
   EXPECT_EQ(FunctionDefHash(fdef2), FunctionDefHash(fdef3));
+}
+
+TEST(InstantiateFunctionTest, ArgAttrs) {
+  auto fdef = FDH::Create(
+      // Name
+      "Func",
+      // Inputs
+      {"x: int32"},
+      // Outputs
+      {"y: int32"},
+      // Attrs
+      {},
+      // Nodes
+      {// a = Identity<int32>(x)
+       {{"a"}, "Identity", {"x"}, {{"T", DT_INT32}}},
+       // o = NoOp(^a)
+       {{"o"}, "NoOp", {"^a"}, {}},
+       // y = Identity<int32>(a, ^o)
+       {{"y"}, "Identity", {"a:output:0", "^o"}, {{"T", DT_INT32}}}},
+      // Returns
+      {{"y", "y:output:0"}});
+  AttrValue shape_attr;
+  TensorShapeProto* shape_proto = shape_attr.mutable_list()->add_shape();
+  shape_proto->add_dim()->set_size(2);
+  shape_proto->add_dim()->set_size(4);
+  shape_proto->add_dim()->set_size(6);
+  shape_proto->add_dim()->set_size(8);
+  FunctionDef::ArgAttrs arg_attrs;
+  (*arg_attrs.mutable_attr())["_output_shapes"] = std::move(shape_attr);
+  (*fdef.mutable_arg_attr())[0] = std::move(arg_attrs);
+
+  // Instantiate one with T=float
+  InstantiationResult result;
+  TF_ASSERT_OK(
+      InstantiateFunction(fdef, Attrs({{"T", DT_FLOAT}}), GetOpSig, &result));
+  bool found = false;
+  for (const auto& node : result.nodes) {
+    if (node.name() != "x") {
+      continue;
+    }
+    found = true;
+    auto it = node.attr().find("_output_shapes");
+    ASSERT_TRUE(it != node.attr().end());
+    const auto& attr = it->second;
+    ASSERT_EQ(attr.list().shape_size(), 1);
+    const auto& shape_attr = attr.list().shape(0);
+    ASSERT_FALSE(shape_attr.unknown_rank());
+    ASSERT_EQ(shape_attr.dim_size(), 4);
+    EXPECT_EQ(shape_attr.dim(0).size(), 2);
+    EXPECT_EQ(shape_attr.dim(1).size(), 4);
+    EXPECT_EQ(shape_attr.dim(2).size(), 6);
+    EXPECT_EQ(shape_attr.dim(3).size(), 8);
+  }
+  EXPECT_TRUE(found);
 }
 
 }  // end namespace

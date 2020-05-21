@@ -37,7 +37,7 @@ using toco::port::StringF;
 namespace toco {
 namespace {
 
-// 'nslimit' is a graphviz (dot) paramater that limits the iterations during
+// 'nslimit' is a graphviz (dot) parameter that limits the iterations during
 // the layout phase. Omitting it allows infinite iterations, causing some
 // complex graphs to never finish. A value of 125 produces good graphs
 // while allowing complex graphs to finish.
@@ -647,7 +647,7 @@ void DumpNode(const Model& model, string* output_file, const string& node_name,
 
   for (const auto& child : node.children) {
     if (!child.second->array_id.empty()) {
-      // Dump array if this node posesses one.
+      // Dump array if this node possesses one.
       DumpArray(model, output_file, child.second->array_id);
     }
     // Note that it is always possible to have children. Unlike a filesystem,

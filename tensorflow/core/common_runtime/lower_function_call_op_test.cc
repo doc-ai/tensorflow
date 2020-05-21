@@ -13,8 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/common_runtime/lower_functional_ops.h"
-
 #include "tensorflow/cc/client/client_session.h"
 #include "tensorflow/cc/framework/ops.h"
 #include "tensorflow/cc/ops/array_ops.h"
@@ -22,14 +20,14 @@ limitations under the License.
 #include "tensorflow/cc/ops/function_ops.h"
 #include "tensorflow/cc/ops/resource_variable_ops.h"
 #include "tensorflow/cc/ops/standard_ops.h"
+#include "tensorflow/core/common_runtime/graph_constructor.h"
 #include "tensorflow/core/common_runtime/graph_runner.h"
+#include "tensorflow/core/common_runtime/lower_functional_ops.h"
 #include "tensorflow/core/framework/function_testlib.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
-#include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/graph_def_builder.h"
-#include "tensorflow/core/graph/graph_def_builder_util.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/test.h"
@@ -86,12 +84,12 @@ TEST(LowerFunctionCallTest, InlineFunctionCall) {
                   /*control_ret_def=*/{{"must_execute", "add"}});
 
   // Construct a graph:
-  //   A = _Arg[T=int32]
+  //   A = Placeholder[dtype=int32]
   //   F = PartitionedCall[f=AddAndMul](a)
   //   B = Identity(func, ^func)
   Scope root = Scope::NewRootScope().ExitOnError();
   TF_ASSERT_OK(root.graph()->AddFunctionLibrary(f_lib_proto));
-  auto a = ops::_Arg(root.WithOpName("A"), DT_INT32, 0);
+  auto a = ops::Placeholder(root.WithOpName("A"), DT_INT32);
   Node* function_call;
   std::vector<NodeBuilder::NodeOut> inputs({NodeBuilder::NodeOut(a.node())});
   TF_ASSERT_OK(NodeBuilder("F", "PartitionedCall", &root.graph()->flib_def())
@@ -150,12 +148,12 @@ TEST(LowerFunctionCallTest, DoNotInlineTpuOrXlaFunctions) {
   *(f_lib_proto.add_function()) = test::function::XTimesTwo();
 
   // Construct a graph:
-  //   A = _Arg[T=int32]
+  //   A = Placeholder[dtype=int32]
   //   B = XTimesTwo[_tpu_replicate="cluster"](A)
   //   C = XTimesTwo[_xla_compile_id="cluster"](A)
   Scope root = Scope::NewRootScope().ExitOnError();
   TF_ASSERT_OK(root.graph()->AddFunctionLibrary(f_lib_proto));
-  auto a = ops::_Arg(root.WithOpName("A"), DT_INT32, 0);
+  auto a = ops::Placeholder(root.WithOpName("A"), DT_INT32);
   std::vector<NodeBuilder::NodeOut> inputs({NodeBuilder::NodeOut(a.node())});
 
   Node* tpu_call;

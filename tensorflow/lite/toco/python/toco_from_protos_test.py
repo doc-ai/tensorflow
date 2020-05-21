@@ -19,7 +19,7 @@ from __future__ import print_function
 import os
 import tempfile
 
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from tensorflow.lite.toco import model_flags_pb2
 from tensorflow.lite.toco import toco_flags_pb2
 from tensorflow.lite.toco import types_pb2
@@ -67,7 +67,7 @@ class TocoFromProtosTest(googletest.TestCase):
       fp_model.flush()
       fp_toco.flush()
       fp_input.flush()
-      tflite_bin = resource_loader.get_path_to_datafile("toco_from_protos")
+      tflite_bin = resource_loader.get_path_to_datafile("toco_from_protos.par")
       cmdline = " ".join([
           tflite_bin, fp_model.name, fp_toco.name, fp_input.name, fp_output.name
       ])
@@ -85,7 +85,7 @@ class TocoFromProtosTest(googletest.TestCase):
       val = img + tf.constant([1., 2., 3.]) + tf.constant([1., 4., 4.])
       out = tf.identity(val, name="out")
       out2 = tf.sin(val, name="out2")
-      # This is a valid mdoel
+      # This is a valid model
       self._run(sess, img, out, True)
       # This uses an invalid function.
       # TODO(aselle): Check to make sure a warning is included.

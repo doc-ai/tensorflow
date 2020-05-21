@@ -17,16 +17,23 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-import tensorflow as tf
+
+import tensorflow.compat.v1 as tf
 from tensorflow.python.framework import test_util
 from tensorflow.python.platform import test as test_lib
+
+_TEST_VERSION = 1
 
 
 class TestUpgrade(test_util.TensorFlowTestCase):
   """Test various APIs that have been changed in 2.0."""
 
+  @classmethod
+  def setUpClass(cls):
+    cls._tf_api_version = 1 if hasattr(tf, 'contrib') else 2
+
   def setUp(self):
-    tf.enable_eager_execution()
+    tf.compat.v1.enable_v2_behavior()
 
   def testRenames(self):
     self.assertAllClose(1.04719755, tf.acos(0.5))
@@ -72,23 +79,6 @@ class TestUpgrade(test_util.TensorFlowTestCase):
     out = tf.nn.softmax_cross_entropy_with_logits_v2(
         logits=[0.1, 0.8], labels=[0, 1])
     self.assertAllClose(out, 0.40318608)
-
-  def testLinearClassifier(self):
-    feature_column = tf.feature_column.numeric_column(
-        'feature', shape=(1,))
-
-    classifier = tf.estimator.LinearClassifier(
-        n_classes=2, feature_columns=[feature_column])
-
-    data = {'feature': [1, 20, 3]}
-    target = [0, 1, 0]
-    classifier.train(
-        input_fn=lambda: (data, target),
-        steps=100)
-    scores = classifier.evaluate(
-        input_fn=lambda: (data, target),
-        steps=100)
-    self.assertGreater(scores['accuracy'], 0.99)
 
   def testUniformUnitScalingInitializer(self):
     init = tf.initializers.uniform_unit_scaling(0.5, seed=1)

@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/platform/path.h"
 #include "tensorflow/core/platform/test.h"
 
 namespace xla {
@@ -127,8 +128,12 @@ TEST(LiteralTestUtilTest, ExpectNearFailurePlacesResultsInTemporaryDirectory) {
   };
 
   tensorflow::Env* env = tensorflow::Env::Default();
-  string pattern =
-      tensorflow::io::JoinPath(tensorflow::testing::TmpDir(), "/tempfile-*");
+
+  string outdir;
+  if (!tensorflow::io::GetTestUndeclaredOutputsDir(&outdir)) {
+    outdir = tensorflow::testing::TmpDir();
+  }
+  string pattern = tensorflow::io::JoinPath(outdir, "tempfile-*.pb");
   std::vector<string> files;
   TF_CHECK_OK(env->GetMatchingPaths(pattern, &files));
   for (const auto& f : files) {
@@ -281,6 +286,14 @@ TEST(LiteralTestUtil, NearComparatorDifferentLengths) {
       LiteralUtil::CreateR1<float>({0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7});
   EXPECT_FALSE(LiteralTestUtil::Near(a, b, ErrorSpec{0.0001}));
   EXPECT_FALSE(LiteralTestUtil::Near(b, a, ErrorSpec{0.0001}));
+}
+
+TEST(LiteralTestUtilTest, ExpectNearDoubleOutsideFloatValueRange) {
+  auto two_times_float_max =
+      LiteralUtil::CreateR0<double>(2.0 * std::numeric_limits<float>::max());
+  ErrorSpec error(0.001);
+  EXPECT_TRUE(
+      LiteralTestUtil::Near(two_times_float_max, two_times_float_max, error));
 }
 
 }  // namespace

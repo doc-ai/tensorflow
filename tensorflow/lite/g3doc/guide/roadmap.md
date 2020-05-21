@@ -1,77 +1,87 @@
-# TensorFlow Lite 2019 Roadmap
+# TensorFlow Lite Roadmap
 
-**Updated: March 6th, 2019**
+**Updated: April 18, 2020**
 
-The following represents a high level overview of our 2019 plan. You should be
-conscious that this roadmap may change at anytime relative to a range of factors
-and the order below does not reflect any type of priority. As a matter of
-principle, we typically prioritize issues that the majority of our users are
-asking for and so this list fundamentally reflects that.
+The following represents a high level overview of our 2020 plan. You should be
+aware that this roadmap may change at any time and the order below does not
+reflect any type of priority. As a matter of principle, we typically prioritize
+issues based on the number of users affected.
 
 We break our roadmap into four key segments: usability, performance,
 optimization and portability. We strongly encourage you to comment on our
-roadmap and provide us feedback in the TF Lite discussion groups and forums.
+roadmap and provide us feedback in the
+[TF Lite discussion group](https://groups.google.com/a/tensorflow.org/g/tflite).
 
 ## Usability
 
-*   **More ops coverage**
-    *   Prioritize many more ops based on user feedback
-*   **Op versioning & signatures**
-    *   Op kernels will get version numbers
-    *   Op kernels will be identifiable by signature
-*   **New Convertor**
-    *   Implementing a new TensorFlow Lite convertor that will better handle
-        graph conversion (i.e. control flow, conditionals etc) and replace TOCO
-*   **Continue to improve TF Select Ops**
-    *   Support more types of conversion utilizing TF Selects such as hash
-        tables, strings etc.
-    *   Support smaller binary size when using select TF ops via op stripping
+*   **Expanded ops coverage**
+    *   Prioritized op additions based on user feedback
+*   **Improvements to using TensorFlow ops in TensorFlow Lite**
+    *   Pre-built libraries available via Bintray (Android) and Cocoapods (iOS)
+    *   Smaller binary size when using select TF ops via op stripping
 *   **LSTM / RNN support**
-    *   Add full support of conversion for LSTMs and RNNs
-*   **Graph Visualization Tooling**
-    *   Provide enhanced graph visualization tooling
-*   **Pre-and-post processing support**
-    *   Add more support for pre-and-post processing of inference
+    *   Full LSTM and RNN conversion support, including support in Keras
+*   **Pre-and-post processing support libraries and codegen tool**
+    *   Ready-to-use API building blocks for common ML tasks
+    *   Support more models (e.g. NLP) and more platforms (e.g. iOS)
+*   **Android Studio Integration**
+    *   Drag & drop TFLite models into Android Studio to generate model binding
+        classes
 *   **Control Flow & Training on-device**
-    *   Add support for control flow related ops
-    *   Add support for training on-device
-*   **New APIs**
-    *   New C API as core for language bindings and most clients
-    *   Objective-C API for iOS
-    *   SWIFT API for iOS
-    *   Updated Java API for Android
-    *   C# Unity language bindings
-*   **Add more Models**
-    *   Add more models to the support section of the site
+    *   Support for training on-device, focused on personalization and transfer
+        learning
+*   **Visualization tooling with TensorBoard**
+    *   Provide enhanced tooling with TensorBoard
+*   **Model Maker**
+    *   Support more tasks, including object detection and BERT-based NLP tasks
+*   **More models and examples**
+    *   More examples to demonstrate model usage as well as new features and
+        APIs, covering different platforms.
 
 ## Performance
 
-*   **More hardware delegates**
-    *   Add support for more hardware delegates
-*   **Support NN API**
-    *   Continually support and improve support for NN API
-*   **Framework Extensibility**
-    *   Enable simplistic overwriting of CPU kernels with customized optimized
-        versions
-*   **GPU Delegate**
-    *   Continue to extend the total support ops for OpenGL and Metal ops
-    *   Open-source
-*   **Improve TFLite CPU performance**
-    *   Optimizations for float and quantized models
+*   **Better tooling**
+    *   Public dashboard for tracking performance gains with each release
+*   **Improved CPU performance**
+    *   New highly optimized floating-point kernel library for convolutional
+        models
+    *   First-class x86 support
+*   **Updated NN API support**
+    *   Full support for new Android R NN API features, ops and types
+*   **GPU backend optimizations**
+    *   Vulkan support on Android
+    *   Support integer quantized models
+*   **Hexagon DSP backend**
+    *   Per-channel quantization support for all models created through
+        post-training quantization
+    *   Dynamic input batch size support
+    *   Better op coverage, including LSTM
+*   **Core ML backend**
+    *   Optimizing start-up time
+    *   Dynamic quantized models support
+    *   Float16 quantized models support
+    *   Better op coverage
 
 ## Optimization
 
-*   **Model Optimization Toolkit**
-    *   Post training quantization + hybrid kernels
-    *   Post Training quantization + fixed-point kernels
-    *   Training with quantization
-*   **More support for more techniques**
-    *   RNN Support
-    *   Sparsity/Pruning
-    *   Lower bit-width support
+*   **Quantization**
+
+    *   Post-training quantization for (8b) fixed-point RNNs
+    *   During-training quantization for (8b) fixed-point RNNs
+    *   Quality and performance improvements for post-training dynamic-range
+        quantization
+
+*   **Pruning / sparsity**
+
+    *   Sparse model execution support in TensorFlow Lite -
+        [WIP](https://github.com/tensorflow/model-optimization/issues/173)
+    *   Weight clustering API
 
 ## Portability
 
 *   **Microcontroller Support**
-    *   Add support for a range of 8-bit, 16-bit and 32-bit MCU architecture use
-        cases for Speech and Image Classification
+    *   Add support for a range of 32-bit MCU architecture use cases for speech
+        and image classification
+    *   Sample code and models for vision and audio data
+    *   Full TF Lite op support on microcontrollers
+    *   Support for more platforms, including CircuitPython support

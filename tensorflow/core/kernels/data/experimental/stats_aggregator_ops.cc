@@ -12,14 +12,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tensorflow/core/framework/stats_aggregator.h"
-
 #include <memory>
 
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/resource_op_kernel.h"
+#include "tensorflow/core/framework/stats_aggregator.h"
 #include "tensorflow/core/framework/summary.pb.h"
 #include "tensorflow/core/kernels/summary_interface.h"
+#include "tensorflow/core/lib/core/refcount.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/histogram/histogram.h"
 #include "tensorflow/core/lib/monitoring/counter.h"
@@ -30,6 +30,7 @@ limitations under the License.
 
 namespace tensorflow {
 namespace data {
+namespace experimental {
 namespace {
 
 static mutex* get_counters_map_lock() {
@@ -104,8 +105,9 @@ class StatsAggregatorImpl : public StatsAggregator {
 
  private:
   mutex mu_;
-  std::unordered_map<string, histogram::Histogram> histograms_ GUARDED_BY(mu_);
-  std::unordered_map<string, float> scalars_ GUARDED_BY(mu_);
+  std::unordered_map<string, histogram::Histogram> histograms_
+      TF_GUARDED_BY(mu_);
+  std::unordered_map<string, float> scalars_ TF_GUARDED_BY(mu_);
   TF_DISALLOW_COPY_AND_ASSIGN(StatsAggregatorImpl);
 };
 
@@ -117,7 +119,7 @@ class StatsAggregatorHandleOp
 
  private:
   Status CreateResource(StatsAggregatorResource** ret) override
-      EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+      TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     *ret =
         new StatsAggregatorResource(absl::make_unique<StatsAggregatorImpl>());
     return Status::OK();
@@ -184,7 +186,7 @@ class StatsAggregatorImplV2 : public StatsAggregator {
       // If we create stats_aggregator twice in a program, we would end up with
       // already existing resource. In this case emitting an error if a
       // `summary_writer_resource` is present is not the intended behavior, we
-      // could either Unref the existing sumary_writer_resource or not set the
+      // could either Unref the existing summary_writer_resource or not set the
       // new resource at all.
     }
     summary_writer_interface_ = summary_writer_interface;
@@ -194,14 +196,13 @@ class StatsAggregatorImplV2 : public StatsAggregator {
 
  private:
   void AddToEvents(const string& name, const int64 steps,
-                   const float scalar_value) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+                   const float scalar_value) TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     if (summary_writer_interface_ == nullptr) {
       return;
     }
     std::unique_ptr<Event> e{new Event};
     e->set_step(steps);
-    tensorflow::Env* env = tensorflow::Env::Default();
-    e->set_wall_time(env->NowMicros() / 1.0e6);
+    e->set_wall_time(EnvTime::NowMicros() / 1.0e6);
     // maybe expose GetWallTime in SummaryWriterInterface
     Summary::Value* v = e->mutable_summary()->add_value();
     v->set_tag(name);
@@ -211,14 +212,13 @@ class StatsAggregatorImplV2 : public StatsAggregator {
 
   void AddToEvents(const string& name, const int64 steps,
                    const histogram::Histogram& histogram)
-      EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+      TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     if (summary_writer_interface_ == nullptr) {
       return;
     }
     std::unique_ptr<Event> e{new Event};
     e->set_step(steps);
-    tensorflow::Env* env = tensorflow::Env::Default();
-    e->set_wall_time(env->NowMicros() / 1.0e6);
+    e->set_wall_time(EnvTime::NowMicros() / 1.0e6);
     Summary::Value* v = e->mutable_summary()->add_value();
     v->set_tag(name);
     histogram.EncodeToProto(v->mutable_histo(), false /* Drop zero buckets */);
@@ -226,10 +226,12 @@ class StatsAggregatorImplV2 : public StatsAggregator {
   }
 
   mutex mu_;
-  SummaryWriterInterface* summary_writer_interface_ GUARDED_BY(mu_) = nullptr;
+  SummaryWriterInterface* summary_writer_interface_ TF_GUARDED_BY(mu_) =
+      nullptr;
   // not owned, we might be associating the default summary_writer from the
   // context
-  std::unordered_map<string, histogram::Histogram> histograms_ GUARDED_BY(mu_);
+  std::unordered_map<string, histogram::Histogram> histograms_
+      TF_GUARDED_BY(mu_);
   TF_DISALLOW_COPY_AND_ASSIGN(StatsAggregatorImplV2);
 };
 
@@ -241,7 +243,7 @@ class StatsAggregatorHandleOpV2
 
  private:
   Status CreateResource(StatsAggregatorResource** ret) override
-      EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+      TF_EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     *ret =
         new StatsAggregatorResource(absl::make_unique<StatsAggregatorImplV2>());
     return Status::OK();
@@ -258,16 +260,15 @@ class StatsAggregatorSummaryOp : public OpKernel {
     OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(resource_handle_t.shape()),
                 errors::InvalidArgument("resource_handle must be a scalar"));
 
-    StatsAggregatorResource* resource;
+    core::RefCountPtr<StatsAggregatorResource> resource;
     OP_REQUIRES_OK(ctx,
                    LookupResource(ctx, HandleFromInput(ctx, 0), &resource));
-    core::ScopedUnref unref_iterator(resource);
 
     Tensor* summary_t;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({}), &summary_t));
     Summary summary;
     resource->stats_aggregator()->EncodeToProto(&summary);
-    summary_t->scalar<string>()() = summary.SerializeAsString();
+    summary_t->scalar<tstring>()() = summary.SerializeAsString();
   }
 };
 
@@ -281,36 +282,42 @@ class StatsAggregatorSetSummaryWriterOp : public OpKernel {
     OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(resource_handle_t.shape()),
                 errors::InvalidArgument("resource_handle must be a scalar"));
 
-    StatsAggregatorResource* resource;
+    core::RefCountPtr<StatsAggregatorResource> resource;
     OP_REQUIRES_OK(ctx,
                    LookupResource(ctx, HandleFromInput(ctx, 0), &resource));
-    core::ScopedUnref unref_iterator(resource);
 
     const Tensor& summary_resource_handle_t = ctx->input(1);
     OP_REQUIRES(ctx,
                 TensorShapeUtils::IsScalar(summary_resource_handle_t.shape()),
                 errors::InvalidArgument("resource_handle must be a scalar"));
-    SummaryWriterInterface* sumamry_resource;
+    core::RefCountPtr<SummaryWriterInterface> summary_resource;
     OP_REQUIRES_OK(
-        ctx, LookupResource(ctx, HandleFromInput(ctx, 1), &sumamry_resource));
-    core::ScopedUnref unref_sumamry_resource(sumamry_resource);
+        ctx, LookupResource(ctx, HandleFromInput(ctx, 1), &summary_resource));
     TF_CHECK_OK(
-        resource->stats_aggregator()->SetSummaryWriter(sumamry_resource));
+        resource->stats_aggregator()->SetSummaryWriter(summary_resource.get()));
   }
 };
 
+REGISTER_KERNEL_BUILDER(Name("StatsAggregatorHandle").Device(DEVICE_CPU),
+                        StatsAggregatorHandleOp);
 REGISTER_KERNEL_BUILDER(
     Name("ExperimentalStatsAggregatorHandle").Device(DEVICE_CPU),
     StatsAggregatorHandleOp);
+
 REGISTER_KERNEL_BUILDER(Name("StatsAggregatorHandleV2").Device(DEVICE_CPU),
                         StatsAggregatorHandleOpV2);
+
+REGISTER_KERNEL_BUILDER(Name("StatsAggregatorSummary").Device(DEVICE_CPU),
+                        StatsAggregatorSummaryOp);
 REGISTER_KERNEL_BUILDER(
     Name("ExperimentalStatsAggregatorSummary").Device(DEVICE_CPU),
     StatsAggregatorSummaryOp);
+
 REGISTER_KERNEL_BUILDER(
     Name("StatsAggregatorSetSummaryWriter").Device(DEVICE_CPU),
     StatsAggregatorSetSummaryWriterOp);
 
 }  // namespace
+}  // namespace experimental
 }  // namespace data
 }  // namespace tensorflow

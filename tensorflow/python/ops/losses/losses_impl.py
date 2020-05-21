@@ -18,7 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
@@ -30,6 +29,7 @@ from tensorflow.python.ops import nn
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import weights_broadcast_ops
 from tensorflow.python.ops.losses import util
+from tensorflow.python.util import dispatch
 from tensorflow.python.util.deprecation import deprecated_args
 from tensorflow.python.util.deprecation import deprecated_argument_lookup
 from tensorflow.python.util.tf_export import tf_export
@@ -45,14 +45,9 @@ class Reduction(object):
   * `SUM`: Scalar sum of weighted losses.
   * `MEAN`: Scalar `SUM` divided by sum of weights. DEPRECATED.
   * `SUM_OVER_BATCH_SIZE`: Scalar `SUM` divided by number of elements in losses.
-     Note that when using `tf.distribute.Strategy`, this is the global batch
-     size across all the replicas that are contributing to a single step.
   * `SUM_OVER_NONZERO_WEIGHTS`: Scalar `SUM` divided by number of non-zero
      weights. DEPRECATED.
-     Note that when using `tf.distribute.Strategy`, this is scaled by the
-     number of replicas that are contributing to a single step to get an
-     approximation to the global batch size.
-  * `SUM_BY_NONZERO_WEIGHTS`: Same as `SUM_OVER_NONZERO_WEIGHTS`.
+  * `SUM_BY_NONZERO_WEIGHTS`: Same as `SUM_OVER_NONZERO_WEIGHTS`. DEPRECATED.
   """
 
   NONE = "none"
@@ -142,6 +137,7 @@ def _num_elements(losses):
 
 
 @tf_export(v1=["losses.compute_weighted_loss"])
+@dispatch.add_dispatch_support
 def compute_weighted_loss(
     losses, weights=1.0, scope=None, loss_collection=ops.GraphKeys.LOSSES,
     reduction=Reduction.SUM_BY_NONZERO_WEIGHTS):
@@ -179,6 +175,10 @@ def compute_weighted_loss(
   """
   Reduction.validate(reduction)
   with ops.name_scope(scope, "weighted_loss", (losses, weights)):
+    # Save the `reduction` argument for loss normalization when distributing
+    # to multiple replicas. Used only for estimator + v1 optimizer flow.
+    ops.get_default_graph()._last_loss_reduction = reduction  # pylint: disable=protected-access
+
     with ops.control_dependencies((
         weights_broadcast_ops.assert_broadcastable(weights, losses),)):
       losses = ops.convert_to_tensor(losses)
@@ -190,17 +190,14 @@ def compute_weighted_loss(
         loss = weighted_losses
       else:
         loss = math_ops.reduce_sum(weighted_losses)
-        num_replicas = (  # Used to convert from local to global batch size.
-            distribution_strategy_context.get_strategy().num_replicas_in_sync)
         if reduction == Reduction.MEAN:
-          denom = (num_replicas *
-                   math_ops.reduce_sum(array_ops.ones_like(losses) * weights))
-          loss = _safe_mean(loss, denom)
+          loss = _safe_mean(
+              loss, math_ops.reduce_sum(array_ops.ones_like(losses) * weights))
         elif (reduction == Reduction.SUM_BY_NONZERO_WEIGHTS or
               reduction == Reduction.SUM_OVER_NONZERO_WEIGHTS):
-          loss = _safe_mean(loss, num_replicas * _num_present(losses, weights))
+          loss = _safe_mean(loss, _num_present(losses, weights))
         elif reduction == Reduction.SUM_OVER_BATCH_SIZE:
-          loss = _safe_mean(loss, num_replicas * _num_elements(losses))
+          loss = _safe_mean(loss, _num_elements(losses))
 
       # Convert the result back to the input type.
       loss = math_ops.cast(loss, input_dtype)
@@ -209,6 +206,7 @@ def compute_weighted_loss(
 
 
 @tf_export(v1=["losses.absolute_difference"])
+@dispatch.add_dispatch_support
 def absolute_difference(
     labels, predictions, weights=1.0, scope=None,
     loss_collection=ops.GraphKeys.LOSSES,
@@ -262,6 +260,7 @@ def absolute_difference(
 
 
 @tf_export(v1=["losses.cosine_distance"])
+@dispatch.add_dispatch_support
 @deprecated_args(None, "dim is deprecated, use axis instead", "dim")
 def cosine_distance(
     labels, predictions, axis=None, weights=1.0, scope=None,
@@ -318,6 +317,7 @@ def cosine_distance(
 
 
 @tf_export(v1=["losses.hinge_loss"])
+@dispatch.add_dispatch_support
 def hinge_loss(labels, logits, weights=1.0, scope=None,
                loss_collection=ops.GraphKeys.LOSSES,
                reduction=Reduction.SUM_BY_NONZERO_WEIGHTS):
@@ -368,10 +368,11 @@ def hinge_loss(labels, logits, weights=1.0, scope=None,
 
 
 @tf_export(v1=["losses.huber_loss"])
+@dispatch.add_dispatch_support
 def huber_loss(labels, predictions, weights=1.0, delta=1.0, scope=None,
                loss_collection=ops.GraphKeys.LOSSES,
                reduction=Reduction.SUM_BY_NONZERO_WEIGHTS):
-  """Adds a Huber Loss term to the training procedure.
+  """Adds a [Huber Loss](https://en.wikipedia.org/wiki/Huber_loss) term to the training procedure.
 
   For each value x in `error=labels-predictions`, the following is calculated:
 
@@ -381,8 +382,6 @@ def huber_loss(labels, predictions, weights=1.0, delta=1.0, scope=None,
   ```
 
   where d is `delta`.
-
-  See: https://en.wikipedia.org/wiki/Huber_loss
 
   `weights` acts as a coefficient for the loss. If a scalar is provided, then
   the loss is simply scaled by the given value. If `weights` is a tensor of size
@@ -398,8 +397,8 @@ def huber_loss(labels, predictions, weights=1.0, delta=1.0, scope=None,
     weights: Optional `Tensor` whose rank is either 0, or the same rank as
       `labels`, and must be broadcastable to `labels` (i.e., all dimensions must
       be either `1`, or the same as the corresponding `losses` dimension).
-    delta: `float`, the point where the huber loss function
-      changes from a quadratic to linear.
+    delta: `float`, the point where the huber loss function changes from a
+      quadratic to linear.
     scope: The scope for the operations performed in computing the loss.
     loss_collection: collection to which the loss will be added.
     reduction: Type of reduction to apply to loss.
@@ -446,6 +445,7 @@ def huber_loss(labels, predictions, weights=1.0, delta=1.0, scope=None,
 
 
 @tf_export(v1=["losses.log_loss"])
+@dispatch.add_dispatch_support
 def log_loss(labels, predictions, weights=1.0, epsilon=1e-7, scope=None,
              loss_collection=ops.GraphKeys.LOSSES,
              reduction=Reduction.SUM_BY_NONZERO_WEIGHTS):
@@ -503,6 +503,7 @@ def log_loss(labels, predictions, weights=1.0, epsilon=1e-7, scope=None,
 
 # TODO(b/37208492): Add reduction arg.
 @tf_export(v1=["losses.mean_pairwise_squared_error"])
+@dispatch.add_dispatch_support
 def mean_pairwise_squared_error(
     labels, predictions, weights=1.0, scope=None,
     loss_collection=ops.GraphKeys.LOSSES):
@@ -599,6 +600,7 @@ def mean_pairwise_squared_error(
 
 
 @tf_export(v1=["losses.mean_squared_error"])
+@dispatch.add_dispatch_support
 def mean_squared_error(
     labels, predictions, weights=1.0, scope=None,
     loss_collection=ops.GraphKeys.LOSSES,
@@ -652,6 +654,7 @@ def mean_squared_error(
 
 
 @tf_export(v1=["losses.sigmoid_cross_entropy"])
+@dispatch.add_dispatch_support
 def sigmoid_cross_entropy(
     multi_class_labels, logits, weights=1.0, label_smoothing=0, scope=None,
     loss_collection=ops.GraphKeys.LOSSES,
@@ -716,6 +719,7 @@ def sigmoid_cross_entropy(
 
 
 @tf_export(v1=["losses.softmax_cross_entropy"])
+@dispatch.add_dispatch_support
 def softmax_cross_entropy(
     onehot_labels, logits, weights=1.0, label_smoothing=0, scope=None,
     loss_collection=ops.GraphKeys.LOSSES,
@@ -838,6 +842,7 @@ def _remove_squeezable_dimensions(
 
 
 @tf_export(v1=["losses.sparse_softmax_cross_entropy"])
+@dispatch.add_dispatch_support
 def sparse_softmax_cross_entropy(
     labels, logits, weights=1.0, scope=None,
     loss_collection=ops.GraphKeys.LOSSES,

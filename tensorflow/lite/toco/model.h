@@ -21,6 +21,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "absl/types/optional.h"
@@ -75,6 +76,7 @@ enum class OperatorType : uint8 {
   kRelu1,
   kRelu6,
   kPRelu,
+  kHardSwish,
   kSoftmax,
   kLogSoftmax,
   kSub,
@@ -82,6 +84,7 @@ enum class OperatorType : uint8 {
   kTransposeConv,
   kCast,
   kFloor,
+  kRound,
   kGather,
   kResizeBilinear,
   kSin,
@@ -143,7 +146,9 @@ enum class OperatorType : uint8 {
   // instead of being given as plain constant arrays. So we need to insert
   // special nodes in the graph to shuffle axes.
   kReorderAxes,
+  kSegmentSum,
   kSelect,
+  kSelectV2,
   kSparseToDense,
   kEqual,
   kNotEqual,
@@ -170,7 +175,14 @@ enum class OperatorType : uint8 {
   kElu,
   kReverseSequence,
   kMatrixDiag,
-  kMatrixSetDiag
+  kMatrixSetDiag,
+  kMatrixDiagV2,
+  kMatrixSetDiagV2,
+  kMatrixDiagV3,
+  kMatrixSetDiagV3,
+  kScatterNd,
+  // Debugging operators.
+  kNumericVerify
 };
 
 // Helper to deal with TensorFlow arrays using a different ordering of
@@ -222,6 +234,8 @@ enum class ArrayDataType : uint8 {
   kUint64,  // 10
   kString,
   kComplex64,
+  kFloat16,
+  kFloat64,
 };
 
 // Compile-time logic to map ArrayDataType to the corresponding C++ scalar type
@@ -478,7 +492,7 @@ struct ConvOperator : Operator {
 //   inputs[4]: optional: merge repeated.
 //
 //  Outputs:
-//    outputs[0]: deocoded.
+//    outputs[0]: decoded.
 //    outputs[1]: log probability.
 //
 // TensorFlow equivalent: CTCBeamSearchDecoder
@@ -548,6 +562,10 @@ struct FullyConnectedOperator : Operator {
   FullyConnectedOperator() : Operator(OperatorType::kFullyConnected) {}
   FullyConnectedWeightsFormat weights_format =
       FullyConnectedWeightsFormat::kDefault;
+
+  // `keep_num_dims` is supported in the FullyConnected kernel version 5, but
+  // it's never supported by Toco.
+  bool keep_num_dims = false;
 };
 
 // Dequantization operator, converting a quantized array of integers with
@@ -575,6 +593,21 @@ struct FullyConnectedOperator : Operator {
 // TensorFlow equivalent: Dequantize
 struct DequantizeOperator : Operator {
   DequantizeOperator() : Operator(OperatorType::kDequantize) {}
+};
+
+// Numeric verification operator, converting a quantized array of integers with
+// quantization parameters specifying how these integers correspond to real
+// numbers
+// (see QuantizationParams) and verify them with an array of floating-point
+// values.
+
+// Inputs:
+//   inputs[0]: required: the input quantized activations array
+//   inputs[1]: required: the input reference activations array
+//
+// TensorFlow equivalent: Dequantize
+struct NumericVerifyOperator : Operator {
+  NumericVerifyOperator() : Operator(OperatorType::kNumericVerify) {}
 };
 
 // Batch-normalization operator.
@@ -689,9 +722,20 @@ struct MulOperator : Operator {
 // Inputs:
 //   inputs[0]: required: the input array
 //
-// TensorFlow equivalent: Relu
+// TensorFlow equivalent: abs
 struct AbsOperator : Operator {
   AbsOperator() : Operator(OperatorType::kAbs) {}
+};
+
+// Element-wise HardSwish operator:
+//   x -> x * relu6(x+3)/6
+//
+// Inputs:
+//   inputs[0]: required: the input array
+//
+// TensorFlow equivalent: hard_swish
+struct HardSwishOperator : Operator {
+  HardSwishOperator() : Operator(OperatorType::kHardSwish) {}
 };
 
 // Elu
@@ -929,6 +973,10 @@ inline bool operator==(const MinMax& m1, const MinMax& m2) {
   return m1.min == m2.min && m1.max == m2.max;
 }
 
+inline bool operator!=(const MinMax& m1, const MinMax& m2) {
+  return m1.min != m2.min || m1.max != m2.max;
+}
+
 // Fake-quantization operator. This does two things:
 //   - Annotate its input and output arrays with MinMax information,
 //   - Arithmetic-wise, this operator rounds incoming activation values
@@ -971,9 +1019,8 @@ struct TensorFlowIdentityOperator : Operator {
   TensorFlowIdentityOperator() : Operator(OperatorType::kIdentity) {}
 };
 
-// Batch matrix multiplication operator. This comes from the (deprecated)
-// tf.batch_matmul or a tf.matmul that has rank 3. dims(0) is the batch count
-// and it can be trivially unrolled into a series of matmuls on each element.
+// Batch matrix multiplication operator. This comes from a tf.matmul where one
+// of the operands has rank 3 or more.
 //
 // Inputs:
 //   inputs[0]: required: the left-hand side matrix
@@ -1128,6 +1175,7 @@ struct StridedSliceOperator : Operator {
 //
 // Inputs:
 //   inputs[0]: required: the input array
+//   inputs[1]: optional: the output tensor shape
 //
 // TensorFlow equivalent: Reshape --- except that we only support a special case
 // here, where the output shape is a matrix (2D) shape.
@@ -1153,6 +1201,8 @@ struct SqueezeOperator : Operator {
 //   inputs[0]: required: the output shape
 //   inputs[1]: required: the weights
 //   inputs[2]: required: the input activations array
+//   inputs[3]: optional: the bias vector, specifying the biases for each output
+//                        channel.
 //   NOTE: The input activations is NOT the first input.
 //
 //
@@ -1165,6 +1215,7 @@ struct TransposeConvOperator : Operator {
     OUTPUT_SHAPE = 0,
     WEIGHTS = 1,
     DATA_INPUT = 2,
+    BIAS = 3,
   };
 
   TransposeConvOperator() : Operator(OperatorType::kTransposeConv) {}
@@ -1212,7 +1263,7 @@ struct ExpandDimsOperator : Operator {
   ExpandDimsOperator() : Operator(OperatorType::kExpandDims) {}
 };
 
-// Ceates a tensor of shape dims and fills it with the given scalar value.
+// Creates a tensor of shape dims and fills it with the given scalar value.
 // Output type will be the same as the given scalar value.
 //
 // Inputs:
@@ -1716,6 +1767,16 @@ struct CeilOperator : Operator {
   CeilOperator() : Operator(OperatorType::kCeil) {}
 };
 
+// Round operator.
+//
+// Inputs:
+//   inputs[0]: required: the input array
+//
+// TensorFlow equivalent: Round
+struct RoundOperator : Operator {
+  RoundOperator() : Operator(OperatorType::kRound) {}
+};
+
 // Gather operator. It gathers slices from params according to indices.
 // Only 1-D indices are supported at the moment.
 //
@@ -1784,6 +1845,7 @@ struct ResizeBilinearOperator : Operator {
   ResizeBilinearOperator() : Operator(OperatorType::kResizeBilinear) {}
 
   bool align_corners = false;
+  bool half_pixel_centers = false;
 };
 
 // ResizeNearestNeighborOperator operator. It resizes input images with nearest
@@ -1799,6 +1861,7 @@ struct ResizeNearestNeighborOperator : Operator {
       : Operator(OperatorType::kResizeNearestNeighbor) {}
 
   bool align_corners = false;
+  bool half_pixel_centers = false;
 };
 
 // SpaceToBatchND operator. It divides spatial dimensions into a grid of
@@ -2085,6 +2148,26 @@ struct MatrixDiagOperator : Operator {
   MatrixDiagOperator() : Operator(OperatorType::kMatrixDiag) {}
 };
 
+// Matrix Diag Operator V2:
+// Construct a batched diagonal tensor with given batched diagonal values.
+// Not fully supported, contains 4 extra inputs compared to MatrixDiag. Behave
+// like MatrixDiag when default parameters are used.
+struct MatrixDiagV2Operator : Operator {
+  MatrixDiagV2Operator() : Operator(OperatorType::kMatrixDiagV2) {}
+};
+
+// Matrix Diag Operator V3:
+// Construct a batched diagonal tensor with given batched diagonal values.
+// Not fully supported, contains 5 extra inputs compared to MatrixDiag. Behave
+// like MatrixDiag when default parameters are used.
+// V3 is only different from V2 because it has an extra attribute (align) which
+// controls the alignment of diagonals in the band matrix (compact) format.
+// The alignment in V2 contradicts with the default alignment in V3 so V2 is
+// skipped. (It has never been, and should never be, exposed in the public API.)
+struct MatrixDiagV3Operator : Operator {
+  MatrixDiagV3Operator() : Operator(OperatorType::kMatrixDiagV3) {}
+};
+
 // Matrix Set Diag Operator:
 // Construct a batched diagonal tensor with given input and diagonal values.
 // Input is a rank (k+1) tensor of values.
@@ -2093,6 +2176,34 @@ struct MatrixDiagOperator : Operator {
 //         tensor.
 struct MatrixSetDiagOperator : Operator {
   MatrixSetDiagOperator() : Operator(OperatorType::kMatrixSetDiag) {}
+};
+
+// Matrix Set Diag Operator V2:
+// Construct a batched diagonal tensor with given input and diagonal values.
+// Not fully supported, contains 1 extra inputs compared to MatrixSetDiag.
+// Behave like MatrixSetDiag when default parameters are used.
+struct MatrixSetDiagV2Operator : Operator {
+  MatrixSetDiagV2Operator() : Operator(OperatorType::kMatrixSetDiagV2) {}
+};
+
+// Matrix Set Diag Operator V3:
+// Construct a batched diagonal tensor with given input and diagonal values.
+// Not fully supported, contains 2 extra inputs compared to MatrixSetDiag.
+// Behave like MatrixSetDiag when default parameters are used.
+// V3 is only different from V2 because it has an extra attribute (align) which
+// controls the alignment of diagonals in the band matrix (compact) format.
+// The alignment in V2 contradicts with the default alignment in V3 so V2 is
+// skipped. (It has never been, and should never be, exposed in the public API.)
+struct MatrixSetDiagV3Operator : Operator {
+  MatrixSetDiagV3Operator() : Operator(OperatorType::kMatrixSetDiagV3) {}
+};
+
+struct ScatterNdOperator : Operator {
+  ScatterNdOperator() : Operator(OperatorType::kScatterNd) {}
+};
+
+struct SegmentSumOperator : Operator {
+  SegmentSumOperator() : Operator(OperatorType::kSegmentSum) {}
 };
 
 // Alloc's are used for transient arrays only. An Alloc specifies which interval
@@ -2323,6 +2434,14 @@ class Model {
 
   int64 ArithmeticOpsCount() const { return ops_count; }
 
+  void AddInvalidInputArray(string invalid_input_array) {
+    invalid_input_arrays_.insert(invalid_input_array);
+  }
+
+  const std::unordered_set<string>& GetInvalidInputArrays() const {
+    return invalid_input_arrays_;
+  }
+
   // Optional arrays are used for optional tensors,
   // these tensors do not have data, but with reserved names as op inputs.
   std::set<string> optional_arrays;
@@ -2349,6 +2468,9 @@ class Model {
   // The Operator's refer to these Array's by their name strings, not by their
   // addresses. See Operator::inputs, Operator::outputs.
   std::unordered_map<string, std::unique_ptr<Array>> arrays;
+
+  // Invalid input arrays.
+  std::unordered_set<string> invalid_input_arrays_;
 };
 
 // OperatorSignature contains the information required to making versioning

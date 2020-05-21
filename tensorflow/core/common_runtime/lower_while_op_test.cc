@@ -13,21 +13,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/common_runtime/lower_functional_ops.h"
-
+#include "absl/strings/match.h"
 #include "tensorflow/cc/client/client_session.h"
 #include "tensorflow/cc/framework/ops.h"
 #include "tensorflow/cc/ops/array_ops.h"
 #include "tensorflow/cc/ops/control_flow_ops_internal.h"
 #include "tensorflow/cc/ops/function_ops.h"
 #include "tensorflow/cc/ops/standard_ops.h"
+#include "tensorflow/core/common_runtime/graph_constructor.h"
 #include "tensorflow/core/common_runtime/graph_runner.h"
+#include "tensorflow/core/common_runtime/lower_functional_ops.h"
 #include "tensorflow/core/framework/function_testlib.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/graph/graph_constructor.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/graph/graph_def_builder.h"
-#include "tensorflow/core/graph/graph_def_builder_util.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/test.h"
@@ -64,7 +64,7 @@ TEST(LowerWhileOpTest, Simple) {
 
   Scope root = Scope::NewRootScope().ExitOnError();
   TF_ASSERT_OK(root.graph()->AddFunctionLibrary(f_lib_proto));
-  auto a = ops::_Arg(root.WithOpName("A"), DT_INT32, 0);
+  auto a = ops::Placeholder(root.WithOpName("A"), DT_INT32);
   Node* while_node;
   std::vector<NodeBuilder::NodeOut> inputs({NodeBuilder::NodeOut(a.node())});
   AttrValue cond_func;
@@ -80,6 +80,9 @@ TEST(LowerWhileOpTest, Simple) {
           .Attr("parallel_iterations", 100)
           .Attr(LowerFunctionalOpsPass::kLowerUsingSwitchMergeAttr, true)
           .Finalize(root.graph(), &while_node));
+  auto c = ops::Identity(
+      root.WithOpName("C").WithControlDependencies(Output(while_node)),
+      Output(while_node));
   TF_ASSERT_OK(root.DoShapeInference(while_node));
   TF_ASSERT_OK(root.ToGraph(graph.get()));
 
@@ -135,6 +138,9 @@ TEST(LowerWhileOpTest, Simple) {
     if (op->type_string() == "XTimesTwo") {
       x_times_two_count++;
     }
+    if (op->name() == "C") {
+      ASSERT_EQ(op->in_edges().size(), 2);
+    }
     ASSERT_NE(op->type_string(), "While");
   }
   // One node per loop input.
@@ -165,6 +171,238 @@ TEST(LowerWhileOpTest, Simple) {
   }
 }
 
+TEST(LowerWhileOpTest, ForwardAssignedInputDevice) {
+  std::unique_ptr<Graph> graph(new Graph(OpRegistry::Global()));
+
+  // Add test functions for cond and body.
+  FunctionDefLibrary f_lib_proto;
+  *f_lib_proto.add_function() = test::function::XTimesTwo();
+  *f_lib_proto.add_function() = test::function::LessThanOrEqualToN(8);
+
+  TF_ASSERT_OK(graph->AddFunctionLibrary(f_lib_proto));
+  auto type = DT_FLOAT;
+  Node* placeholder;
+  TF_CHECK_OK(NodeBuilder("placed_node", "Placeholder")
+                  .Attr("dtype", type)
+                  .Finalize(graph.get(), &placeholder));
+  const string assigned_device_name = "/job:localhost/replica:0/task:0/gpu:0";
+  placeholder->set_assigned_device_name(assigned_device_name);
+  Node* while_node;
+  std::vector<NodeBuilder::NodeOut> inputs({NodeBuilder::NodeOut(placeholder)});
+  AttrValue cond_func;
+  cond_func.mutable_func()->set_name("LessThanOrEqualToN");
+  AttrValue body_func;
+  body_func.mutable_func()->set_name("XTimesTwo");
+  TF_ASSERT_OK(
+      NodeBuilder("while", "While", &graph->flib_def())
+          .Input(inputs)
+          .Attr("T", {type})
+          .Attr("cond", cond_func)
+          .Attr("body", body_func)
+          .Attr("parallel_iterations", 100)
+          .Attr(LowerFunctionalOpsPass::kLowerUsingSwitchMergeAttr, true)
+          .Finalize(graph.get(), &while_node));
+  TF_ASSERT_OK(Rewrite(&graph));
+
+  const Node* placeholder_node = nullptr;
+  for (const auto* op : graph->op_nodes()) {
+    if (op->name() == "placed_node") {
+      placeholder_node = op;
+    }
+  }
+  ASSERT_NE(placeholder_node, nullptr);
+  // Verify the assigned device of the Enter node.
+  int enter_consumers = 0;
+  const Node* enter_node = nullptr;
+  for (const Node* consumer : placeholder_node->out_nodes()) {
+    if (consumer->type_string() == "Enter") {
+      enter_consumers += 1;
+      enter_node = consumer;
+      ASSERT_EQ(consumer->assigned_device_name(), assigned_device_name);
+    }
+  }
+  ASSERT_EQ(enter_consumers, 1);
+  // Verify the assigned device of the Merge node.
+  int merge_consumers = 0;
+  const Node* merge_node = nullptr;
+  for (const Node* consumer : enter_node->out_nodes()) {
+    if (consumer->type_string() == "Merge") {
+      merge_consumers += 1;
+      merge_node = consumer;
+      ASSERT_EQ(consumer->assigned_device_name(), assigned_device_name);
+    }
+  }
+  ASSERT_EQ(merge_consumers, 1);
+  // Verify the assigned device of the NextIteration node.
+  int next_iteration_consumers = 0;
+  for (const Node* consumer : merge_node->in_nodes()) {
+    if (consumer->type_string() == "NextIteration") {
+      next_iteration_consumers += 1;
+      ASSERT_EQ(consumer->assigned_device_name(), assigned_device_name);
+    }
+  }
+  ASSERT_EQ(next_iteration_consumers, 1);
+  // Verify the assigned device of the Switch node.
+  int switch_consumers = 0;
+  const Node* switch_node = nullptr;
+  for (const Node* consumer : merge_node->out_nodes()) {
+    if (consumer->type_string() == "Switch") {
+      switch_consumers += 1;
+      switch_node = consumer;
+      ASSERT_EQ(consumer->assigned_device_name(), assigned_device_name);
+    }
+  }
+  ASSERT_EQ(switch_consumers, 1);
+  // Verify the assigned device of the Exit node.
+  int exit_consumers = 0;
+  for (const Node* consumer : switch_node->out_nodes()) {
+    if (consumer->type_string() == "Exit") {
+      exit_consumers += 1;
+      ASSERT_EQ(consumer->assigned_device_name(), assigned_device_name);
+    }
+  }
+  ASSERT_EQ(exit_consumers, 1);
+}
+
+TEST(LowerWhileOpTest, ForwardRequestedInputDevice) {
+  std::unique_ptr<Graph> graph(new Graph(OpRegistry::Global()));
+
+  // Add test functions for cond and body.
+  FunctionDefLibrary f_lib_proto;
+  *f_lib_proto.add_function() = test::function::XTimesTwo();
+  *f_lib_proto.add_function() = test::function::LessThanOrEqualToN(8);
+
+  TF_ASSERT_OK(graph->AddFunctionLibrary(f_lib_proto));
+  auto type = DT_FLOAT;
+  // We will place the loop var on the gpu:0.
+  const string gpu_0_device = "/job:localhost/replica:0/task:0/gpu:0";
+  // We will place loop's control input on the gpu:1.
+  const string gpu_1_device = "/job:localhost/replica:0/task:0/gpu:1";
+  // We will place While op on gpu:2.
+  const string gpu_2_device = "/job:localhost/replica:0/task:0/gpu:2";
+  Node* gpu_0_ph;
+  TF_CHECK_OK(NodeBuilder("placed_node", "Placeholder")
+                  .Attr("dtype", type)
+                  .Device(gpu_0_device)
+                  .Finalize(graph.get(), &gpu_0_ph));
+  Node* control_in;
+  // Add a control input to the While op to trigger the creation of a
+  // LoopExecuted node.
+  TF_CHECK_OK(NodeBuilder("control_in", "Placeholder")
+                  .Attr("dtype", type)
+                  .Device(gpu_1_device)
+                  .Finalize(graph.get(), &control_in));
+  Node* while_node;
+  std::vector<NodeBuilder::NodeOut> inputs({NodeBuilder::NodeOut(gpu_0_ph)});
+  AttrValue cond_func;
+  cond_func.mutable_func()->set_name("LessThanOrEqualToN");
+  AttrValue body_func;
+  body_func.mutable_func()->set_name("XTimesTwo");
+  TF_ASSERT_OK(
+      NodeBuilder("while", "While", &graph->flib_def())
+          .Input(inputs)
+          .ControlInput(control_in)
+          .Device(gpu_2_device)
+          .Attr("T", {type})
+          .Attr("cond", cond_func)
+          .Attr("body", body_func)
+          .Attr("parallel_iterations", 100)
+          .Attr(LowerFunctionalOpsPass::kLowerUsingSwitchMergeAttr, true)
+          .Finalize(graph.get(), &while_node));
+
+  // Create an empty Const node with control dep from the While op.
+  // This triggers the creation of a LoopExecuted node.
+  Node* control_out;
+  TensorProto proto;
+  proto.set_dtype(DT_FLOAT);
+  TensorShape empty_shape({0});
+  empty_shape.AsProto(proto.mutable_tensor_shape());
+  TF_ASSERT_OK(NodeBuilder("control_out", "Const")
+                   .ControlInput(while_node)
+                   .Attr("dtype", DT_FLOAT)
+                   .Attr("value", proto)
+                   .Finalize(graph.get(), &control_out));
+
+  TF_ASSERT_OK(Rewrite(&graph));
+
+  const Node* placeholder_node = nullptr;
+  for (const auto* op : graph->op_nodes()) {
+    if (op->name() == "placed_node") {
+      placeholder_node = op;
+    }
+  }
+  ASSERT_NE(placeholder_node, nullptr);
+  // Verify the requested device of the Enter node.
+  int enter_consumers = 0;
+  const Node* enter_node = nullptr;
+  for (const Node* consumer : placeholder_node->out_nodes()) {
+    if (consumer->type_string() == "Enter") {
+      enter_consumers += 1;
+      enter_node = consumer;
+      ASSERT_EQ(consumer->requested_device(), gpu_0_device);
+    }
+  }
+  ASSERT_EQ(enter_consumers, 1);
+  // Verify the requested device of the Merge node.
+  int merge_consumers = 0;
+  const Node* merge_node = nullptr;
+  for (const Node* consumer : enter_node->out_nodes()) {
+    if (consumer->type_string() == "Merge") {
+      merge_consumers += 1;
+      merge_node = consumer;
+      ASSERT_EQ(consumer->requested_device(), gpu_0_device);
+    }
+  }
+  ASSERT_EQ(merge_consumers, 1);
+  // Verify the requested device of the NextIteration node.
+  int next_iteration_consumers = 0;
+  for (const Node* consumer : merge_node->in_nodes()) {
+    if (consumer->type_string() == "NextIteration") {
+      next_iteration_consumers += 1;
+      ASSERT_EQ(consumer->requested_device(), gpu_0_device);
+    }
+  }
+  ASSERT_EQ(next_iteration_consumers, 1);
+  // Verify the requested device of the Switch node.
+  int switch_consumers = 0;
+  const Node* switch_node = nullptr;
+  for (const Node* consumer : merge_node->out_nodes()) {
+    if (consumer->type_string() == "Switch") {
+      switch_consumers += 1;
+      switch_node = consumer;
+      ASSERT_EQ(consumer->requested_device(), gpu_0_device);
+    }
+  }
+  ASSERT_EQ(switch_consumers, 1);
+  // Verify the requested device of the Exit node.
+  int exit_consumers = 0;
+  for (const Node* consumer : switch_node->out_nodes()) {
+    if (consumer->type_string() == "Exit") {
+      exit_consumers += 1;
+      ASSERT_EQ(consumer->requested_device(), gpu_0_device);
+    }
+  }
+  ASSERT_EQ(exit_consumers, 1);
+  // Verify the requested device of LoopControlInputs.
+  const Node* loop_control_inputs_node = nullptr;
+  for (const auto* op : graph->op_nodes()) {
+    if (absl::StrContains(op->name(), "LoopControlInputs")) {
+      loop_control_inputs_node = op;
+    }
+  }
+  ASSERT_NE(loop_control_inputs_node, nullptr);
+  ASSERT_EQ(loop_control_inputs_node->requested_device(), gpu_2_device);
+  // Verify the requested device of LoopExecuted.
+  const Node* loop_executed_node = nullptr;
+  for (const auto* op : graph->op_nodes()) {
+    if (absl::StrContains(op->name(), "LoopExecuted")) {
+      loop_executed_node = op;
+    }
+  }
+  ASSERT_NE(loop_executed_node, nullptr);
+  ASSERT_EQ(loop_executed_node->requested_device(), gpu_2_device);
+}
+
 TEST(LowerWhileOpTest, MultipleInputs) {
   std::unique_ptr<Graph> graph(new Graph(OpRegistry::Global()));
 
@@ -175,8 +413,8 @@ TEST(LowerWhileOpTest, MultipleInputs) {
 
   Scope root = Scope::NewRootScope().ExitOnError();
   TF_ASSERT_OK(root.graph()->AddFunctionLibrary(f_lib_proto));
-  auto a = ops::_Arg(root.WithOpName("A"), DT_INT32, 0);
-  auto b = ops::_Arg(root.WithOpName("B"), DT_INT32, 1);
+  auto a = ops::Placeholder(root.WithOpName("A"), DT_INT32);
+  auto b = ops::Placeholder(root.WithOpName("B"), DT_INT32);
   Node* while_node;
   std::vector<NodeBuilder::NodeOut> inputs(
       {NodeBuilder::NodeOut(a.node()), NodeBuilder::NodeOut(b.node())});
@@ -291,7 +529,7 @@ TEST(LowerWhileOpTest, DoNotInlineLoweredFunctions) {
 
   Scope root = Scope::NewRootScope().ExitOnError();
   TF_ASSERT_OK(root.graph()->AddFunctionLibrary(f_lib_proto));
-  auto a = ops::_Arg(root.WithOpName("A"), DT_INT32, 0);
+  auto a = ops::Placeholder(root.WithOpName("A"), DT_INT32);
   Node* while_node;
   std::vector<NodeBuilder::NodeOut> inputs({NodeBuilder::NodeOut(a.node())});
   AttrValue cond_func;

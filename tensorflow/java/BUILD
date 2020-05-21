@@ -1,20 +1,22 @@
 # Description:
 # TensorFlow Java API.
 
-package(default_visibility = ["//visibility:private"])
-
-licenses(["notice"])  # Apache 2.0
-
 load(":build_defs.bzl", "JAVACOPTS")
 load(":src/gen/gen_ops.bzl", "tf_java_op_gen_srcjar")
 load(
     "//tensorflow:tensorflow.bzl",
+    "VERSION",
     "tf_binary_additional_srcs",
     "tf_cc_binary",
+    "tf_cc_test",
     "tf_copts",
     "tf_custom_op_library",
     "tf_java_test",
-    "tf_cc_test",
+)
+
+package(
+    default_visibility = ["//visibility:private"],
+    licenses = ["notice"],  # Apache 2.0
 )
 
 java_library(
@@ -23,10 +25,27 @@ java_library(
         ":java_op_sources",
         ":java_sources",
     ],
-    data = [":libtensorflow_jni"],
+    data = tf_binary_additional_srcs() + [":libtensorflow_jni"],
     javacopts = JAVACOPTS,
     plugins = [":processor"],
+    resources = [":java_resources"],
     visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "version-info",
+    outs = ["src/main/resources/tensorflow-version-info"],
+    cmd = "echo version=%s > $@" % VERSION,
+    output_to_bindir = 1,
+)
+
+filegroup(
+    name = "java_resources",
+    srcs = [":version-info"],
+    visibility = [
+        "//tensorflow/contrib/android:__pkg__",
+        "//tensorflow/java:__pkg__",
+    ],
 )
 
 # NOTE(ashankar): Rule to include the Java API in the Android Inference Library
@@ -38,8 +57,8 @@ filegroup(
         "src/main/java/org/tensorflow/types/*.java",
     ]),
     visibility = [
-        "//tensorflow/contrib/android:__pkg__",
         "//tensorflow/java:__pkg__",
+        "//tensorflow/tools/android/inference_interface:__pkg__",
     ],
 )
 
@@ -131,6 +150,45 @@ java_library(
     srcs = ["src/test/java/org/tensorflow/TestUtil.java"],
     javacopts = JAVACOPTS,
     deps = [":tensorflow"],
+)
+
+tf_java_test(
+    name = "EagerSessionTest",
+    size = "small",
+    srcs = ["src/test/java/org/tensorflow/EagerSessionTest.java"],
+    javacopts = JAVACOPTS,
+    test_class = "org.tensorflow.EagerSessionTest",
+    deps = [
+        ":tensorflow",
+        ":testutil",
+        "@junit",
+    ],
+)
+
+tf_java_test(
+    name = "EagerOperationBuilderTest",
+    size = "small",
+    srcs = ["src/test/java/org/tensorflow/EagerOperationBuilderTest.java"],
+    javacopts = JAVACOPTS,
+    test_class = "org.tensorflow.EagerOperationBuilderTest",
+    deps = [
+        ":tensorflow",
+        ":testutil",
+        "@junit",
+    ],
+)
+
+tf_java_test(
+    name = "EagerOperationTest",
+    size = "small",
+    srcs = ["src/test/java/org/tensorflow/EagerOperationTest.java"],
+    javacopts = JAVACOPTS,
+    test_class = "org.tensorflow.EagerOperationTest",
+    deps = [
+        ":tensorflow",
+        ":testutil",
+        "@junit",
+    ],
 )
 
 tf_java_test(

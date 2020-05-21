@@ -10,9 +10,12 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License.
+# limitations under the License..
 # ==============================================================================
 """TensorFlow is an open source machine learning framework for everyone.
+
+[![Python](https://img.shields.io/pypi/pyversions/tensorflow.svg?style=plastic)](https://badge.fury.io/py/tensorflow)
+[![PyPI](https://badge.fury.io/py/tensorflow.svg)](https://badge.fury.io/py/tensorflow)
 
 TensorFlow is an open source software library for high performance numerical
 computation. Its flexible architecture allows easy deployment of computation
@@ -40,26 +43,31 @@ from setuptools import setup
 from setuptools.command.install import install as InstallCommandBase
 from setuptools.dist import Distribution
 
-DOCLINES = __doc__.split('\n')
-
 # This version string is semver compatible, but incompatible with pip.
 # For pip, we will remove all '-' characters from this string, and use the
 # result for pip.
-_VERSION = '1.13.1'
+# Also update tensorflow/tensorflow.bzl and
+# tensorflow/core/public/version.h
+_VERSION = '2.2.0'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.7.0',
-    'astor >= 0.6.0',
-    'gast >= 0.2.0',
-    'google_pasta >= 0.1.2',
-    'keras_applications >= 1.0.6',
-    'keras_preprocessing >= 1.0.5',
-    'numpy >= 1.14.5, < 2.0',
-    'six >= 1.10.0',
-    'protobuf >= 3.6.1',
-    'tensorboard >= 1.13.0, < 1.14.0',
-    'tensorflow_estimator >= 1.13.0rc0, < 1.14.0rc0',
+    'astunparse == 1.6.3',
+    'gast == 0.3.3',
+    'google_pasta >= 0.1.8',
+    'h5py >= 2.10.0, < 2.11.0',
+    'keras_preprocessing >= 1.1.1, < 1.2',
+    'numpy >= 1.16.0, < 2.0',
+    'opt_einsum >= 2.3.2',
+    'protobuf >= 3.9.2',
+    'tensorboard >= 2.2.0, < 2.3.0',
+    'tensorflow_estimator >= 2.2.0, < 2.3.0',
     'termcolor >= 1.1.0',
+    'wrapt >= 1.11.1',
+    'wheel >= 0.26',
+    'six >= 1.12.0',
+    # scipy < 1.4.1 causes segfaults due to pybind11
+    'scipy == 1.4.1',
 ]
 
 if sys.byteorder == 'little':
@@ -75,32 +83,26 @@ if '--project_name' in sys.argv:
   sys.argv.remove('--project_name')
   sys.argv.pop(project_name_idx)
 
-# python3 requires wheel 0.26
-if sys.version_info.major == 3:
-  REQUIRED_PACKAGES.append('wheel >= 0.26')
-else:
-  REQUIRED_PACKAGES.append('wheel')
-  # mock comes with unittest.mock for python3, need to install for python2
-  REQUIRED_PACKAGES.append('mock >= 2.0.0')
-
 # tf-nightly should depend on tb-nightly
 if 'tf_nightly' in project_name:
   for i, pkg in enumerate(REQUIRED_PACKAGES):
     if 'tensorboard' in pkg:
-      REQUIRED_PACKAGES[i] = 'tb-nightly >= 1.14.0a0, < 1.15.0a0'
-    elif 'tensorflow_estimator' in pkg and '2.0' in project_name:
-      REQUIRED_PACKAGES[i] = 'tensorflow-estimator-2.0-preview'
+      REQUIRED_PACKAGES[i] = 'tb-nightly >= 2.3.0a0, < 2.4.0a0'
     elif 'tensorflow_estimator' in pkg:
       REQUIRED_PACKAGES[i] = 'tf-estimator-nightly'
 
-# weakref.finalize and enum were introduced in Python 3.4
-if sys.version_info < (3, 4):
-  REQUIRED_PACKAGES.append('backports.weakref >= 1.0rc1')
-  REQUIRED_PACKAGES.append('enum34 >= 1.1.6')
+DOCLINES = __doc__.split('\n')
+if project_name.endswith('-gpu'):
+  project_name_no_gpu = project_name[:-len('-gpu')]
+  _GPU_PACKAGE_NOTE = 'Note that %s package by default supports both CPU and '\
+      'GPU. %s has the same content and exists solely for backward '\
+      'compatiblity. Please migrate to %s for GPU support.'\
+      % (project_name_no_gpu, project_name, project_name_no_gpu)
+  DOCLINES.append(_GPU_PACKAGE_NOTE)
+
 
 # pylint: disable=line-too-long
 CONSOLE_SCRIPTS = [
-    'freeze_graph = tensorflow.python.tools.freeze_graph:run_main',
     'toco_from_protos = tensorflow.lite.toco.python.toco_from_protos:main',
     'tflite_convert = tensorflow.lite.python.tflite_convert:main',
     'toco = tensorflow.lite.python.tflite_convert:main',
@@ -111,6 +113,7 @@ CONSOLE_SCRIPTS = [
     # even though the command is not removed, just moved to a different wheel.
     'tensorboard = tensorboard.main:run_main',
     'tf_upgrade_v2 = tensorflow.tools.compatibility.tf_upgrade_v2_main:main',
+    'estimator_ckpt_converter = tensorflow_estimator.python.estimator.tools.checkpoint_converter:main',
 ]
 # pylint: enable=line-too-long
 
@@ -134,8 +137,9 @@ class InstallCommand(InstallCommandBase):
 
   def finalize_options(self):
     ret = InstallCommandBase.finalize_options(self)
-    self.install_headers = os.path.join(self.install_purelib,
-                                        'tensorflow', 'include')
+    self.install_headers = os.path.join(self.install_platlib, 'tensorflow',
+                                        'include')
+    self.install_lib = self.install_platlib
     return ret
 
 
@@ -233,13 +237,23 @@ else:
   EXTENSION_NAME = 'python/_pywrap_tensorflow_internal.so'
 
 headers = (
-    list(find_files('*.h', 'tensorflow/core')) + list(
-        find_files('*.h', 'tensorflow/stream_executor')) +
-    list(find_files('*.h', 'google/protobuf_archive/src')) + list(
-        find_files('*', 'third_party/eigen3')) + list(
-            find_files('*.h', 'tensorflow/include/external/com_google_absl')) +
-    list(find_files('*.inc', 'tensorflow/include/external/com_google_absl')) +
-    list(find_files('*', 'tensorflow/include/external/eigen_archive')))
+    list(find_files('*.proto', 'tensorflow/compiler')) +
+    list(find_files('*.proto', 'tensorflow/core')) +
+    list(find_files('*.proto', 'tensorflow/python')) +
+    list(find_files('*.h', 'tensorflow/c')) +
+    list(find_files('*.h', 'tensorflow/cc')) +
+    list(find_files('*.h', 'tensorflow/compiler')) +
+    list(find_files('*.h.inc', 'tensorflow/compiler')) +
+    list(find_files('*.h', 'tensorflow/core')) +
+    list(find_files('*.h', 'tensorflow/python')) +
+    list(find_files('*.h', 'tensorflow/stream_executor')) +
+    list(find_files('*.h', 'google/com_google_protobuf/src')) +
+    list(find_files('*.inc', 'google/com_google_protobuf/src')) +
+    list(find_files('*', 'third_party/eigen3')) + list(
+        find_files('*.h', 'tensorflow/include/external/com_google_absl')) +
+    list(
+        find_files('*.inc', 'tensorflow/include/external/com_google_absl'))
+    + list(find_files('*', 'tensorflow/include/external/eigen_archive')))
 
 setup(
     name=project_name,
@@ -278,13 +292,12 @@ setup(
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
         'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3 :: Only',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',

@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/flatmap.h"
+#include "tensorflow/core/platform/mutex.h"
 
 // gRPC response caching.  Most WorkerService methods cannot be retried directly
 // as they will fail or deadlock.  To enable retrying, we can instead cache
@@ -86,7 +87,7 @@ class GrpcResponseCache {
   mutex mu_;
   // response_cache_ is expected to be small, as entries are cleared immediately
   // on ack from the receiver.
-  gtl::FlatMap<int64, ResponseCacheEntry> response_cache_ GUARDED_BY(mu_);
+  gtl::FlatMap<int64, ResponseCacheEntry> response_cache_ TF_GUARDED_BY(mu_);
 };
 
 }  // namespace tensorflow

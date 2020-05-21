@@ -87,8 +87,9 @@ class ContextAdjuster(gast.NodeTransformer):
     return self.generic_visit(node)
 
   def visit_Subscript(self, node):
+    self._apply_override(node)
+    self._ctx_override = gast.Load
     node.value = self.visit(node.value)
-    self._ctx_override = None
     return self.generic_visit(node)
 
   def visit_comprehension(self, node):
@@ -117,10 +118,12 @@ class ReplaceTransformer(gast.NodeTransformer):
     self.replacements = replacements
     self.in_replacements = False
     self.preserved_annos = {
+        anno.Basic.DIRECTIVES,
+        anno.Basic.EXTRA_LOOP_TEST,
         anno.Basic.ORIGIN,
         anno.Basic.SKIP_PROCESSING,
         anno.Static.ORIG_DEFINITIONS,
-        'extra_test',
+        'function_context_name',
     }
 
   def _prepare_replacement(self, replaced, key):
@@ -214,10 +217,11 @@ class ReplaceTransformer(gast.NodeTransformer):
 
 def _convert_to_ast(n):
   """Converts from a known data type to AST."""
+  # Note: When generating AST nodes from strings/QNs in isolation, ctx is
+  # unknown. ctx must be filled in according to the template being used.
+  # See ReplaceTransformer.visit_Name.
   if isinstance(n, str):
-    # Note: the node will receive the ctx value from the template, see
-    # ReplaceTransformer.visit_Name.
-    return gast.Name(id=n, ctx=None, annotation=None)
+    return gast.Name(id=n, ctx=None, annotation=None, type_comment=None)
   if isinstance(n, qual_names.QN):
     return n.ast()
   if isinstance(n, list):
@@ -257,7 +261,7 @@ def replace(template, **replacements):
   for k in replacements:
     replacements[k] = _convert_to_ast(replacements[k])
   template_str = parser.STANDARD_PREAMBLE + textwrap.dedent(template)
-  nodes = parser.parse_str(
+  nodes = parser.parse(
       template_str,
       preamble_len=parser.STANDARD_PREAMBLE_LEN,
       single_node=False)
