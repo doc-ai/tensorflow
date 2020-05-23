@@ -1,0 +1,1 @@
+tensorflow/lite/experimental/swift/TensorFlowLiteSwift.podspec
