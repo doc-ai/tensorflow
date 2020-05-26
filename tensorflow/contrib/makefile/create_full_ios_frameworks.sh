@@ -117,7 +117,7 @@ rm -f tmp.tar
 
 echo "Headers, populating: google (proto src)"
 cd $SCRIPT_DIR/downloads/protobuf/src
-find google -name "*.h" | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
+find google \( -name "*.h" -o -name "*.inc" \) | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
 cd $FW_DIR_TFCORE_HDRS
 tar xf tmp.tar
 rm -f tmp.tar
