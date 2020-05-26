@@ -52,7 +52,7 @@ cp $SCRIPT_DIR/gen/lib/libtensorflow-core.a \
 # ...
 
 chmod +x $FW_DIR_TFCORE/tensorflow
-chmod +x $FW_DIR_TFCORE/libprotobuf
+# chmod +x $FW_DIR_TFCORE/libprotobuf
 # chmod +x $FW_DIR_TFCORE/nsync
 
 # tensorflow
