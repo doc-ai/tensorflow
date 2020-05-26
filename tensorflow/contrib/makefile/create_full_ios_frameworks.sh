@@ -108,7 +108,7 @@ rm -f tmp.tar
 
 echo "Headers, populating: absl"
 cd $SCRIPT_DIR/downloads/absl
-find absl -name "*.h" | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
+find absl \( -name "*.h" -o -name "*.inc" \) | tar -cf $FW_DIR_TFCORE_HDRS/tmp.tar -T -
 cd $FW_DIR_TFCORE_HDRS
 tar xf tmp.tar
 rm -f tmp.tar
