@@ -78,76 +78,65 @@ class AddNOp : public OpKernel {
 
 #define I(IDX) ctx->input(input_indices[IDX]).flat<T>()
 
-#if defined(__ANDROID_TYPES_SLIM__)
-    // On Android by default,we only support additions of two arguments, so we
-    // can reduce the number of template instantiations.
-    OP_REQUIRES(ctx, num == 2,
-                errors::InvalidArgument("Only additions of two arguments "
-                                        "supported. Num inputs: ",
-                                        num));
+static const int kWidth = 8;
+int r = num % kWidth;
+
+switch (r) {
+  case 2: {
     functor::Add2Functor<Device, T> functor2;
     functor2(ctx->template eigen_device<Device>(), To, I(0), I(1));
-#else
-    static const int kWidth = 8;
-    int r = num % kWidth;
+    break;
+  }
+  case 3: {
+    functor::Add3Functor<Device, T> functor3;
+    functor3(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2));
+    break;
+  }
+  case 4: {
+    functor::Add4Functor<Device, T> functor4;
+    functor4(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
+              I(3));
+    break;
+  }
+  case 5: {
+    functor::Add5Functor<Device, T> functor5;
+    functor5(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
+              I(3), I(4));
+    break;
+  }
+  case 6: {
+    functor::Add6Functor<Device, T> functor6;
+    functor6(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
+              I(3), I(4), I(5));
+    break;
+  }
+  case 7: {
+    functor::Add7Functor<Device, T> functor7;
+    functor7(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
+              I(3), I(4), I(5), I(6));
+    break;
+  }
+  case 0: {
+    functor::Add8Functor<Device, T> functor8;
+    functor8(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
+              I(3), I(4), I(5), I(6), I(7));
+    r = 8;
+    break;
+  }
+  case 1: {
+    functor::Add9Functor<Device, T> functor9;
+    functor9(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
+              I(3), I(4), I(5), I(6), I(7), I(8));
+    r = 9;
+    break;
+  }
+}
 
-    switch (r) {
-      case 2: {
-        functor::Add2Functor<Device, T> functor2;
-        functor2(ctx->template eigen_device<Device>(), To, I(0), I(1));
-        break;
-      }
-      case 3: {
-        functor::Add3Functor<Device, T> functor3;
-        functor3(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2));
-        break;
-      }
-      case 4: {
-        functor::Add4Functor<Device, T> functor4;
-        functor4(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
-                 I(3));
-        break;
-      }
-      case 5: {
-        functor::Add5Functor<Device, T> functor5;
-        functor5(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
-                 I(3), I(4));
-        break;
-      }
-      case 6: {
-        functor::Add6Functor<Device, T> functor6;
-        functor6(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
-                 I(3), I(4), I(5));
-        break;
-      }
-      case 7: {
-        functor::Add7Functor<Device, T> functor7;
-        functor7(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
-                 I(3), I(4), I(5), I(6));
-        break;
-      }
-      case 0: {
-        functor::Add8Functor<Device, T> functor8;
-        functor8(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
-                 I(3), I(4), I(5), I(6), I(7));
-        r = 8;
-        break;
-      }
-      case 1: {
-        functor::Add9Functor<Device, T> functor9;
-        functor9(ctx->template eigen_device<Device>(), To, I(0), I(1), I(2),
-                 I(3), I(4), I(5), I(6), I(7), I(8));
-        r = 9;
-        break;
-      }
-    }
-
-    for (; r < num; r += kWidth) {
-      functor::Add8pFunctor<Device, T> functor8p;
-      functor8p(ctx->template eigen_device<Device>(), To, I(r), I(r + 1),
-                I(r + 2), I(r + 3), I(r + 4), I(r + 5), I(r + 6), I(r + 7));
-    }
-#endif  // defined(__ANDROID_TYPES_SLIM__)
+for (; r < num; r += kWidth) {
+  functor::Add8pFunctor<Device, T> functor8p;
+  functor8p(ctx->template eigen_device<Device>(), To, I(r), I(r + 1),
+            I(r + 2), I(r + 3), I(r + 4), I(r + 5), I(r + 6), I(r + 7));
+}
 
 #undef I
   }
