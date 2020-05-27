@@ -120,6 +120,7 @@ tensorflow/core/kernels/function_ops.cc
 tensorflow/core/kernels/functional_ops.cc
 tensorflow/core/kernels/fused_batch_norm_op.cc
 tensorflow/core/kernels/fused_eigen_output_kernels.cc
+tensorflow/core/kernels/gather_op.cc
 tensorflow/core/kernels/identity_n_op.cc
 tensorflow/core/kernels/identity_op.cc
 tensorflow/core/kernels/immutable_constant_op.cc
