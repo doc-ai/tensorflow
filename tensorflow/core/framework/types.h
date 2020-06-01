@@ -330,10 +330,10 @@ inline DataTypeSet RealAndQuantizedTypes() { return kRealAndQuantizedTypes; }
 
 #else  // defined(IS_MOBILE_PLATFORM) && !defined(__ANDROID_TYPES_FULL__)
 
-constexpr DataTypeSet kRealNumberTypes = ToSet(DT_FLOAT) | ToSet(DT_INT32);
+constexpr DataTypeSet kRealNumberTypes = ToSet(DT_FLOAT) | ToSet(DT_INT32) | ToSet(DT_INT64);
 inline DataTypeSet RealNumberTypes() { return kRealNumberTypes; }
 
-constexpr DataTypeSet kNumberTypes = ToSet(DT_FLOAT) | ToSet(DT_INT32) |
+constexpr DataTypeSet kNumberTypes = ToSet(DT_FLOAT) | ToSet(DT_INT32) | ToSet(DT_INT64) |
                                      ToSet(DT_QINT8) | ToSet(DT_QUINT8) |
                                      ToSet(DT_QINT32);
 inline DataTypeSet NumberTypes() { return kNumberTypes; }
@@ -344,8 +344,10 @@ constexpr DataTypeSet kQuantizedTypes = ToSet(DT_QINT8) | ToSet(DT_QUINT8) |
 inline DataTypeSet QuantizedTypes() { return kQuantizedTypes; }
 
 constexpr DataTypeSet kRealAndQuantizedTypes =
-    ToSet(DT_FLOAT) | ToSet(DT_INT32) | ToSet(DT_QINT8) | ToSet(DT_QUINT8) |
-    ToSet(DT_QINT16) | ToSet(DT_QUINT16) | ToSet(DT_QINT32);
+    ToSet(DT_FLOAT) | ToSet(DT_INT32) | ToSet(DT_INT64) | 
+    ToSet(DT_QINT8) | ToSet(DT_QUINT8) |
+    ToSet(DT_QINT16) | ToSet(DT_QUINT16) | 
+    ToSet(DT_QINT32);
 inline DataTypeSet RealAndQuantizedTypes() { return kRealAndQuantizedTypes; }
 
 #endif  // defined(IS_MOBILE_PLATFORM)
