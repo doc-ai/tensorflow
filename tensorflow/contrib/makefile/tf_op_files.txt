@@ -147,6 +147,7 @@ tensorflow/core/kernels/lookup_util.cc
 tensorflow/core/kernels/lrn_op.cc
 tensorflow/core/kernels/l2loss_op.cc
 tensorflow/core/kernels/matmul_op.cc
+tensorflow/core/kernels/matmul_op_fused.cc
 tensorflow/core/kernels/matrix_diag_op.cc
 tensorflow/core/kernels/matrix_set_diag_op.cc
 tensorflow/core/kernels/maxpooling_op.cc
