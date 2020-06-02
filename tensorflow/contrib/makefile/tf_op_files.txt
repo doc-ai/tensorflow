@@ -1,4 +1,3 @@
-tensorflow/c/kernels/bitcast_op.cc
 tensorflow/core/kernels/aggregate_ops.cc
 tensorflow/core/kernels/argmax_op.cc
 tensorflow/core/kernels/avgpooling_op.cc
