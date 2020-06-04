@@ -15,7 +15,12 @@ limitations under the License.
 
 #include <string>
 
-#include "re2/re2.h"
+// Changes: @pdow
+// Kludge to keep the kernel for StaticRegexFullMatch, which is needed for models
+// built in TF 2.2 that embed an "s3://" regex pattern match into the exported graph,
+// but without knowing how to include the re2 lib and headers into the build process yet.
+
+// #include "re2/re2.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -29,6 +34,8 @@ class RegexFullMatchOp : public OpKernel {
   explicit RegexFullMatchOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
   void Compute(OpKernelContext* ctx) override {
+    LOG(WARNING) << "The RegexFullMatch op has been modified to always return false. Do not use this op in your model.";
+    
     const Tensor* input_tensor;
     OP_REQUIRES_OK(ctx, ctx->input("input", &input_tensor));
     const auto& input_flat = input_tensor->flat<string>();
@@ -38,18 +45,21 @@ class RegexFullMatchOp : public OpKernel {
     OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(pattern_tensor->shape()),
                 errors::InvalidArgument("Pattern must be scalar, but received ",
                                         pattern_tensor->shape().DebugString()));
+    /*
     const string pattern = pattern_tensor->flat<string>()(0);
     const RE2 match(pattern);
     OP_REQUIRES(ctx, match.ok(),
                 errors::InvalidArgument("Invalid pattern: ", pattern,
                                         ", error: ", match.error()));
+    */
 
     Tensor* output_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output("output", input_tensor->shape(),
                                              &output_tensor));
     auto output_flat = output_tensor->flat<bool>();
     for (size_t i = 0; i < input_flat.size(); ++i) {
-      output_flat(i) = RE2::FullMatch(input_flat(i), match);
+      // output_flat(i) = RE2::FullMatch(input_flat(i), match);
+      output_flat(i) = false;
     }
   }
 };
@@ -62,13 +72,18 @@ class StaticRegexFullMatchOp : public OpKernel {
   explicit StaticRegexFullMatchOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
     string pattern;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("pattern", &pattern));
+    
+    /*
     re_ = MakeUnique<RE2>(pattern);
     OP_REQUIRES(ctx, re_->ok(),
                 errors::InvalidArgument("Invalid pattern: ", pattern,
                                         ", error: ", re_->error()));
+    */
   }
 
   void Compute(OpKernelContext* ctx) override {
+    LOG(WARNING) << "The StaticRegexFullMatch op has been modified to always return false. Do not use this op in your model.";
+    
     const Tensor* input_tensor;
     OP_REQUIRES_OK(ctx, ctx->input("input", &input_tensor));
     const auto& input_flat = input_tensor->flat<string>();
@@ -78,12 +93,15 @@ class StaticRegexFullMatchOp : public OpKernel {
                                              &output_tensor));
     auto output_flat = output_tensor->flat<bool>();
     for (size_t i = 0; i < input_flat.size(); ++i) {
-      output_flat(i) = RE2::FullMatch(input_flat(i), *re_);
+      // output_flat(i) = RE2::FullMatch(input_flat(i), *re_);
+      output_flat(i) = false;
     }
   }
 
+ /*
  private:
   std::unique_ptr<RE2> re_;
+ */
 };
 
 REGISTER_KERNEL_BUILDER(Name("StaticRegexFullMatch").Device(DEVICE_CPU),
