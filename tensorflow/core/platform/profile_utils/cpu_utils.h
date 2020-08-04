@@ -72,9 +72,13 @@ class CpuUtils {
     // The frequency is fixed, typically in the range 1-50MHz.  It can because
     // read at CNTFRQ special register.  We assume the OS has set up
     // the virtual timer properly.
-    uint64_t virtual_timer_value;
-    asm volatile("mrs %0, cntvct_el0" : "=r"(virtual_timer_value));
-    return virtual_timer_value;
+    
+    // uint64_t virtual_timer_value;
+    // asm volatile("mrs %0, cntvct_el0" : "=r"(virtual_timer_value));
+    // return virtual_timer_value;
+
+    // See https://github.com/travbid/tensorflow/commit/8b6b0d2ddb7fb3262c41f471e5f299b9ee377560#diff-5f82d595cba7425ac17d71e7615343d9
+    return DUMMY_CYCLE_CLOCK;
 // ----------------------------------------------------------------
 // V6 is the earliest arm that has a standard cyclecount
 #elif defined(ARMV6) || defined(__ARM_ARCH_7A__)
