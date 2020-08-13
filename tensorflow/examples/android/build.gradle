@@ -42,7 +42,15 @@ allprojects {
 }
 
 // set to 'bazel', 'cmake', 'makefile', 'none'
+
+// bazel:    fails with missing symbol
+// cmake:    downloads the precompiled AAR and only builds libetensorflow_inference and libtensorflow_demo
+// makefile: fails with missing symbol
+// none:     downloads the precompiled AAR
+
 def nativeBuildSystem = 'bazel'
+
+// On fails with missing symbol errors: looks like these are in generated files and we haven't built the full lib
 
 // Controls output directory in APK and CPU type for Bazel builds.
 // NOTE: Does not affect the Makefile build target API (yet), which currently
