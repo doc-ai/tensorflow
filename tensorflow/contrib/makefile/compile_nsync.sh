@@ -255,14 +255,20 @@ for arch in $archs; do
                         exit 2;;
                 esac
 
+                # sysroot = $(NDK_ROOT)/platforms/android-'"$android_api_version"'/arch-'"$sysroot_arch"'
+                # sysroot = $(NDK_ROOT)/sysroot
+                
+                # -I$(NDK_ROOT)/sysroot/usr/include/'"$bin_prefix"'
+
                 makefile='
 			AR := ${NDK_ROOT}/toolchains/'"$toolchain"'/prebuilt/'"$android_os_arch"'/bin/'"$bin_prefix"'-ar
                         CC=${CC_PREFIX} \
                            ${NDK_ROOT}/toolchains/'"$toolchain"'/prebuilt/'"$android_os_arch"'/bin/'"$bin_prefix"'-g++
                         PLATFORM_CPPFLAGS=--sysroot \
-                                          $(NDK_ROOT)/platforms/android-'"$android_api_version"'/arch-'"$sysroot_arch"' \
+                                          $(NDK_ROOT)/sysroot \
                                           -DNSYNC_USE_CPP11_TIMEPOINT -DNSYNC_ATOMIC_CPP11 \
                                           -I$(NDK_ROOT)/sources/android/support/include \
+                                          -I$(NDK_ROOT)/sysroot/usr/include/'"$bin_prefix"' \
                                           -I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/include \
                                           -I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/'"$arch"'/include \
                                           -I../../platform/c++11 -I../../platform/gcc \
