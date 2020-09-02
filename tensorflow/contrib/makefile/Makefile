@@ -167,6 +167,8 @@ PROTO_TEXT_OBJS := $(PROTO_TEXT_CC_OBJS) $(PROTO_TEXT_PB_OBJS)
 # make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID
 TARGET := $(HOST_OS)
 
+
+
 # Where compiled objects are stored.
 GENDIR := $(MAKEFILE_DIR)/gen/
 OBJDIR := $(GENDIR)obj/
@@ -246,6 +248,7 @@ ifeq ($(HAS_GEN_HOST_PROTOC),true)
 	export LD_LIBRARY_PATH=$(MAKEFILE_DIR)/gen/protobuf-host/lib
 endif
 	LDFLAGS += -all_load
+	CXXFLAGS += -framework CoreFoundation
 endif
 # Make sure that we don't strip global constructors on Linux.
 ifeq ($(TARGET),LINUX)
@@ -910,12 +913,12 @@ $(PROTO_TEXT_OBJS) : $(PROTO_TEXT_PB_H_FILES)
 
 # Ensures we link CoreFoundation as it is used for time library when building
 # for Mac and iOS
-ifeq ($(TARGET),OSX)
+# ifeq ($(TARGET),OSX)
   ifeq ($(HOST_ARCH),x86_64)
     HOST_LDOPTS += -framework CoreFoundation
     LIBS += -framework CoreFoundation
   endif
-endif
+# endif
 ifeq ($(TARGET),IOS)
   HOST_LDOPTS += -framework CoreFoundation
 endif
