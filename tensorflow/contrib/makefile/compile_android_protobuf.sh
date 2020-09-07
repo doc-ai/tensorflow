@@ -36,16 +36,20 @@ arm64-v8a armeabi armeabi-v7a armeabi-v7a-hard mips mips64 x86 x86_64)"
 
 SCRIPT_DIR=$(dirname $0)
 ARCHITECTURE=armeabi-v7a
+TOOLCHAIN=gcc
 
 # debug options
-while getopts "a:c" opt_name; do
+while getopts "a:t:c" opt_name; do
   case "$opt_name" in
     a) ARCHITECTURE=$OPTARG;;
+    t) TOOLCHAIN=$OPTARG;;
     c) clean=true;;
     *) usage;;
   esac
 done
 shift $((OPTIND - 1))
+
+echo "Building for ${ARCHITECTURE} with ${TOOLCHAIN}"
 
 source "${SCRIPT_DIR}/build_helper.subr"
 JOB_COUNT="${JOB_COUNT:-$(get_job_count)}"
@@ -93,6 +97,8 @@ else
   echo "protoc found. Skip building host tools."
 fi
 
+echo "Make host protoco completed"
+exit
 
 echo $OSTYPE | grep -q "darwin" && os_type="darwin" || os_type="linux"
 if [[ ${ARCHITECTURE} == "arm64-v8a" ]]; then
@@ -135,22 +141,79 @@ else
     exit 1
 fi
 
+# Override toolchain directory for clang, same llvm directory
+
+if [[ ${TOOLCHAIN} == "clang" ]]; then
+  toolchain="llvm"
+fi
+
 echo "Android api version = ${android_api_version} cc_prefix = ${cc_prefix}"
 
-export PATH=\
-"${NDK_ROOT}/toolchains/${toolchain}/prebuilt/${os_type}-x86_64/bin:$PATH"
-export SYSROOT=\
-"${NDK_ROOT}/platforms/android-${android_api_version}/arch-${sysroot_arch}"
-export CC="${cc_prefix} ${bin_prefix}-gcc --sysroot ${SYSROOT}"
-export CXX="${cc_prefix} ${bin_prefix}-g++ --sysroot ${SYSROOT}"
-export CXXSTL=\
-"${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}"
+# Path and sysroot are same regardless the toolchain
+
+# NDK
+# export PATH="${NDK_ROOT}/toolchains/${toolchain}/prebuilt/${os_type}-x86_64/bin:$PATH"
+# Standalone Toolchain
+export PATH="${NDK_ROOT}/bin:$PATH"
+
+# NDK 14
+# export SYSROOT="${NDK_ROOT}/platforms/android-${android_api_version}/arch-${sysroot_arch}"
+# NDK 16+
+export SYSROOT="${NDK_ROOT}/sysroot"
+
+# NDK
+# export CXXSTL="${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}"
+# Standalone Toolchain
+export CXXSTL="${NDK_ROOT}/${bin_prefix}/lib"
+
+# Compiler and standard libraries depend on toolchain
+
+if [[ ${TOOLCHAIN} == "gcc" ]]; then
+  export CC="${cc_prefix} ${bin_prefix}-gcc --sysroot ${SYSROOT}"
+  export CXX="${cc_prefix} ${bin_prefix}-g++ --sysroot ${SYSROOT}"
+  # export CXXSTL="${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}"
+  export CXXSTL="${NDK_ROOT}/${bin_prefix}/lib"
+elif [[ ${TOOLCHAIN} == "clang" ]]; then
+  # bin_prefix="${bin_prefix}-${android_api_version}"
+  export CC="${cc_prefix} ${bin_prefix}-${android_api_version}-clang --sysroot ${SYSROOT}"
+  export CXX="${cc_prefix} ${bin_prefix}-${android_api_version}-clang++ --sysroot ${SYSROOT}"
+  export CXXSTL="${NDK_ROOT}/sources/cxx-stl/llvm-libc++/libs/${ARCHITECTURE}"
+fi
 
 ./autogen.sh
 if [ $? -ne 0 ]
 then
   echo "./autogen.sh command failed."
   exit 1
+fi
+
+# Flags depend on toolchain
+
+# -I${NDK_ROOT}/sysroot/usr/include/${bin_prefix} \
+
+# NDK Linker Flags
+# LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}" \
+# Standalone Toolchain Flags
+# LDFLAGS="-L${NDK_ROOT}/${bin_prefix}/lib"
+# LDFLAGS="-L${NDK_ROOT}/sysroot/usr/lib"
+# LIBS="-landroid -llog -lz -lgnustl_static"
+
+if [[ ${TOOLCHAIN} == "gcc" ]]; then
+  CXXFLAGS="-frtti -fexceptions ${march_option} \
+  -I${NDK_ROOT}/sources/android/support/include \
+  -I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/include \
+  -I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}/include" \
+  # LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}" \
+  # LDFLAGS="-L${NDK_ROOT}/${bin_prefix}/lib" \
+  LDFLAGS="-L${NDK_ROOT}/sysroot/usr/lib \
+  -L${NDK_ROOT}/${bin_prefix}/lib" \
+  LIBS="-landroid -llog -lz -llibstdc++"
+elif [[ ${TOOLCHAIN} == "clang" ]]; then
+  CXXFLAGS="-frtti -fexceptions ${march_option} \
+  -I${NDK_ROOT}/sources/android/support/include \
+  -I${NDK_ROOT}/sources/cxx-stl/llvm-libc++/include" \
+  LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/llvm-libc++/libs/${ARCHITECTURE}" \
+  LIBS="-llog -lz -lc++_static"
 fi
 
 ./configure --prefix="${GENDIR}/${ARCHITECTURE}" \
@@ -160,12 +223,6 @@ fi
 --enable-cross-compile \
 --with-protoc="${PROTOC_PATH}" \
 CFLAGS="${march_option}" \
-CXXFLAGS="-frtti -fexceptions ${march_option} \
--I${NDK_ROOT}/sources/android/support/include \
--I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/include \
--I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}/include" \
-LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}" \
-LIBS="-llog -lz -lgnustl_static"
 
 if [ $? -ne 0 ]
 then

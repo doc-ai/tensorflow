@@ -167,8 +167,6 @@ PROTO_TEXT_OBJS := $(PROTO_TEXT_CC_OBJS) $(PROTO_TEXT_PB_OBJS)
 # make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID
 TARGET := $(HOST_OS)
 
-
-
 # Where compiled objects are stored.
 GENDIR := $(MAKEFILE_DIR)/gen/
 OBJDIR := $(GENDIR)obj/
@@ -344,6 +342,11 @@ ifeq ($(TARGET),ANDROID)
 		MARCH_OPTION :=
 	endif
 
+	# --sysroot $(NDK_ROOT)/sysroot
+	# --sysroot $(NDK_ROOT)/platforms/android-21/arch-$(SYSROOT_ARCH)
+	
+	# -I$(NDK_ROOT)/sysroot/usr/include/$(BIN_PREFIX)
+
 	ifndef NDK_ROOT
     $(error "NDK_ROOT is not defined.")
 	endif
@@ -358,6 +361,7 @@ $(MARCH_OPTION) \
 -fPIC
 	INCLUDES = \
 -I$(NDK_ROOT)/sources/android/support/include \
+-I$(NDK_ROOT)/sysroot/usr/include/$(BIN_PREFIX) \
 -I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/include \
 -I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(ANDROID_ARCH)/include \
 -I. \
@@ -371,6 +375,9 @@ $(MARCH_OPTION) \
 -I$(MAKEFILE_DIR)/gen/protobuf_android/$(ANDROID_ARCH)/include \
 -I$(PROTOGENDIR) \
 -I$(PBTGENDIR)
+
+	# otherwise std:stoi is unavailable
+	CXXFLAGS += -D_GLIBCXX_USE_C99
 
 	LIBS := \
 $(TARGET_NSYNC_LIB) \
@@ -916,7 +923,7 @@ $(PROTO_TEXT_OBJS) : $(PROTO_TEXT_PB_H_FILES)
 # ifeq ($(TARGET),OSX)
   ifeq ($(HOST_ARCH),x86_64)
     HOST_LDOPTS += -framework CoreFoundation
-    LIBS += -framework CoreFoundation
+    # LIBS += -framework CoreFoundation
   endif
 # endif
 ifeq ($(TARGET),IOS)
