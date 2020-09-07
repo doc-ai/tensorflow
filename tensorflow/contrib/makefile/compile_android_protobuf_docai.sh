@@ -11,6 +11,51 @@
 # You should end up with a gen/protobuf-host directory that contains 
 # gen/protobuf-host/bin/protoc. This is the file used for PROTOC_PATH
 
+# Create a standalone toolchain with the following commands:
+
+# ARCH: armeabi-v7a API: 22 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=arm --platform=android-22 --toolchain=arm-linux-androideabi-4.9 --install-dir=/Users/phildow/android-ndk/arm-22-toolchain
+# cp -r sources /Users/phildow/android-ndk/arm-22-toolchain/sources
+
+# ARCH: arm64-v8a API: 22 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=arm64 --platform=android-22 --toolchain=aarch64-linux-android-4.9 --install-dir=/Users/phildow/android-ndk/arm64-22-toolchain
+# cp -r sources /Users/phildow/android-ndk/arm64-22-toolchain/sources
+
+# ARCH: x86_64 API: 22 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=x86_64 --platform=android-22 --toolchain=x86_64-4.9 --install-dir=/Users/phildow/android-ndk/x86_64-22-toolchain
+# cp -r sources /Users/phildow/android-ndk/x86_64-22-toolchain/sources
+
+# Example executions:
+
+# NDK_ROOT=/Users/phildow/android-ndk/arm-22-toolchain ./compile_android_protobuf_docai.sh -a armeabi-v7a
+# NDK_ROOT=/Users/phildow/android-ndk/arm64-22-toolchain ./compile_android_protobuf_docai.sh -a arm64-v8a
+# NDK_ROOT=/Users/phildow/android-ndk/x86_64-22-toolchain ./compile_android_protobuf_docai.sh -a x86_64
+
+# Pare Command Line Options
+
+# ARCHITECTURE is one of:
+# armeabi-v7a
+# arm64-v8a
+# x86_64
+
+while getopts "a:c" opt_name; do
+  case "$opt_name" in
+    a) ARCHITECTURE=$OPTARG;;
+    c) clean=true;;
+  esac
+done
+shift $((OPTIND - 1))
+
+# Ensure NDK_ROOT is set
+
+if [[ -z "${NDK_ROOT}" ]]
+then
+  echo "You must set NDK_ROOT"
+  exit 1
+fi
+
+# Prepare local variables
+
 SCRIPT_DIR=$(dirname $0)
 GENDIR="$(pwd)/gen/protobuf_android"
 HOST_GENDIR="$(pwd)/gen/protobuf-host"
@@ -18,109 +63,50 @@ HOST_GENDIR="$(pwd)/gen/protobuf-host"
 # must run compile_android_protobuf.sh first
 PROTOC_PATH="${HOST_GENDIR}/bin/protoc"
 
-# 1) Set Architecture
-
-# armeabi-v7a
-# arm64-v8a
-# x86_64
-
-ARCH=arm64-v8a
+# Prepare gen dirs
 
 mkdir -p "${GENDIR}"
-mkdir -p "${GENDIR}/${ARCH}"
+mkdir -p "${GENDIR}/${ARCHITECTURE}"
 
-# 2) Choose Build Exports
+# Prepare exports
 
-# ==== Source Example ====
-
-# export NDK_ROOT=~/Android/android-ndk-r16b
-# export PREFIX=$HOME/Android/protobuf-3.5.1/
-# export PATH=$HOME/Android/arm-21-toolchain/bin:$PATH
-# export SYSROOT=$HOME/Android/arm-21-toolchain/sysroot
-# export CC="arm-linux-androideabi-gcc --sysroot $SYSROOT"
-# export CXX="arm-linux-androideabi-g++ --sysroot $SYSROOT"
-# export CXXSTL=$NDK_ROOT/sources/cxx-stl/gnu-libstdc++/4.9
-
-# ==== ARCH: armeabi-v7a API: 21 ====
-
-# NDK_ROOT from NDK 16.1.4479499 generated with: 
-# ./build/tools/make-standalone-toolchain.sh --arch=arm --platform=android-21 --toolchain=arm-linux-androideabi-4.9 --install-dir=/Users/phildow/android-ndk/arm-21-toolchai
-# cp -r sources /Users/phildow/android-ndk/arm-21-toolchain/sources
-
-# export NDK_ROOT=/Users/phildow/android-ndk/arm-21-toolchain
-# export PREFIX=${GENDIR}/${ARCH}
-# export PATH=$NDK_ROOT/bin:$PATH
-# export SYSROOT=$NDK_ROOT/sysroot
-# export CC="arm-linux-androideabi-gcc --sysroot $SYSROOT"
-# export CXX="arm-linux-androideabi-g++ --sysroot $SYSROOT"
-# export CXXSTL=$NDK_ROOT/sources/cxx-stl/gnu-libstdc++/4.9
-
-# ==== ARCH: armeabi-v7a API: 22 ====
-
-# NDK_ROOT from NDK 16.1.4479499 generated with: 
-# ./build/tools/make-standalone-toolchain.sh --arch=arm --platform=android-22 --toolchain=arm-linux-androideabi-4.9 --install-dir=/Users/phildow/android-ndk/arm-22-toolchain
-# cp -r sources /Users/phildow/android-ndk/arm-22-toolchain/sources
-
-# export NDK_ROOT=/Users/phildow/android-ndk/arm-22-toolchain
-# export PREFIX=${GENDIR}/${ARCH}
-# export PATH=$NDK_ROOT/bin:$PATH
-# export SYSROOT=$NDK_ROOT/sysroot
-# export CC="arm-linux-androideabi-gcc --sysroot $SYSROOT"
-# export CXX="arm-linux-androideabi-g++ --sysroot $SYSROOT"
-# export CXXSTL=$NDK_ROOT/sources/cxx-stl/gnu-libstdc++/4.9
-
-# ==== **** ARCH: arm64-v8a API: 22 **** ====
-
-# NDK_ROOT from NDK 16.1.4479499 generated with: 
-# ./build/tools/make-standalone-toolchain.sh --arch=arm64 --platform=android-22 --toolchain=aarch64-linux-android-4.9 --install-dir=/Users/phildow/android-ndk/arm64-22-toolchain
-# cp -r sources /Users/phildow/android-ndk/arm64-22-toolchain/sources
-
-export NDK_ROOT=/Users/phildow/android-ndk/arm64-22-toolchain
-export PREFIX=${GENDIR}/${ARCH}
+export PREFIX=${GENDIR}/${ARCHITECTURE}
 export PATH=$NDK_ROOT/bin:$PATH
 export SYSROOT=$NDK_ROOT/sysroot
-export CC="aarch64-linux-android-gcc --sysroot $SYSROOT"
-export CXX="aarch64-linux-android-g++ --sysroot $SYSROOT"
+
+if [[ ${ARCHITECTURE} == "arm64-v8a" ]]; then
+    # toolchain="aarch64-linux-android-4.9"
+    # sysroot_arch="arm64"
+    bin_prefix="aarch64-linux-android"
+elif [[ ${ARCHITECTURE} == "armeabi-v7a" ]]; then
+    # toolchain="arm-linux-androideabi-4.9"
+    # sysroot_arch="arm"
+    bin_prefix="arm-linux-androideabi"
+    march_option="-march=armv7-a"
+elif [[ ${ARCHITECTURE} == "x86_64" ]]; then
+    # toolchain="x86_64-4.9"
+    # sysroot_arch="x86_64"
+    bin_prefix="x86_64-linux-android"
+else
+    echo "architecture ${ARCHITECTURE} is not supported." 1>&2
+    usage
+    exit 1
+fi
+
+export CC="${bin_prefix}-gcc --sysroot $SYSROOT"
+export CXX="${bin_prefix}-g++ --sysroot $SYSROOT"
 export CXXSTL=$NDK_ROOT/sources/cxx-stl/gnu-libstdc++/4.9
 
-# ==== **** ARCH: x86_64 API: 22 **** ====
-# ./build/tools/make-standalone-toolchain.sh --arch=x86_64 --platform=android-22 --toolchain=x86_64-4.9 --install-dir=/Users/phildow/android-ndk/x86_64-22-toolchain
-# cp -r sources /Users/phildow/android-ndk/x86_64-22-toolchain/sources
+ANDROID_API_VERSION=22
+HOST=${bin_prefix}
 
-# export NDK_ROOT=/Users/phildow/android-ndk/x86_64-22-toolchain
-# export PREFIX=${GENDIR}/${ARCH}
-# export PATH=$NDK_ROOT/bin:$PATH
-# export SYSROOT=$NDK_ROOT/sysroot
-# export CC="x86_64-linux-android-gcc --sysroot $SYSROOT"
-# export CXX="x86_64-linux-android-g++ --sysroot $SYSROOT"
-# export CXXSTL=$NDK_ROOT/sources/cxx-stl/gnu-libstdc++/4.9
+# Build
 
-# ===== ===== #
+echo "Building ARCH=${ARCHITECTURE} API=${ANDROID_API_VERSION} HOST=${HOST} NDK_ROOT=${NDK_ROOT}"
 
 cd downloads/protobuf
 
 ./autogen.sh
-
-# 3) Configure Build
-
-# ==== ARCH: armeabi-v7a API: 21 ====
-
-# HOST=arm-linux-androideabi
-# C_MARCH_FLAG=-march=armv7-a
-# API=21
-
-# ==== **** ARCH: arm64-v8a API: 22 **** ====
-
-HOST=aarch64-linux-android
-API=22
-
-# ==== **** ARCH: x86_64 API: 22 **** ====
-
-# HOST=x86_64-linux-android
-# API=22
-
-# --enable-shared
-# --with-protoc=protoc
 
 ./configure \
 --prefix=$PREFIX \
@@ -129,15 +115,13 @@ API=22
 --disable-shared \
 --enable-cross-compile \
 --with-protoc="${PROTOC_PATH}" \
-CFLAGS="${MARCH_FLAG} -D__ANDROID_API__=${API}" \
-CXXFLAGS="-frtti -fexceptions ${MARCH_FLAG} \
+CFLAGS="${march_option} -D__ANDROID_API__=${ANDROID_API_VERSION}" \
+CXXFLAGS="-frtti -fexceptions ${march_option} \
 -I${NDK_ROOT}/sources/android/support/include \
 -I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/include \
--I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCH}/include -D__ANDROID_API__=${API}" \
-LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCH}" \
+-I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}/include -D__ANDROID_API__=${ANDROID_API_VERSION}" \
+LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}" \
 LIBS="-llog -lz -lgnustl_static"
-
-echo "Building ARCH=${ARCH} API=${API} HOST=${HOST}"
 
 make -j2
 
