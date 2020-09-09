@@ -119,7 +119,8 @@ CFLAGS="${march_option} -D__ANDROID_API__=${ANDROID_API_VERSION}" \
 CXXFLAGS="-frtti -fexceptions ${march_option} \
 -I${NDK_ROOT}/sources/android/support/include \
 -I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/include \
--I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}/include -D__ANDROID_API__=${ANDROID_API_VERSION}" \
+-I${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}/include \
+-D__ANDROID_API__=${ANDROID_API_VERSION}" \
 LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}" \
 LIBS="-llog -lz -lgnustl_static"
 
