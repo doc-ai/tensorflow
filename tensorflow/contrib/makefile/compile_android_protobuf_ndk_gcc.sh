@@ -145,7 +145,7 @@ export CXX="${cc_prefix} ${bin_prefix}-g++ --sysroot ${SYSROOT}"
 export CXXSTL="${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}"
 
 echo "PATH: ${PATH} CC: ${CC} CXX: ${CXX} HOST: ${bin_prefix}"
-exit
+# exit
 
 ./autogen.sh
 if [ $? -ne 0 ]

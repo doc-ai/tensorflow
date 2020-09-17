@@ -13,23 +13,23 @@
 
 # Create a standalone toolchain with the following commands:
 
-# ARCH: armeabi-v7a API: 22 NDK: 16.1.4479499
-# ./build/tools/make-standalone-toolchain.sh --arch=arm --platform=android-22 --toolchain=arm-linux-androideabi-4.9 --install-dir=/Users/phildow/android-ndk/arm-22-toolchain
-# cp -r sources /Users/phildow/android-ndk/arm-22-toolchain/sources
+# ARCH: armeabi-v7a API: 21 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=arm --platform=android-21 --toolchain=arm-linux-androideabi-4.9 --install-dir=/Users/phildow/android-ndk/arm-21-toolchain
+# cp -r sources /Users/phildow/android-ndk/arm-21-toolchain/sources
 
-# ARCH: arm64-v8a API: 22 NDK: 16.1.4479499
-# ./build/tools/make-standalone-toolchain.sh --arch=arm64 --platform=android-22 --toolchain=aarch64-linux-android-4.9 --install-dir=/Users/phildow/android-ndk/arm64-22-toolchain
-# cp -r sources /Users/phildow/android-ndk/arm64-22-toolchain/sources
+# ARCH: arm64-v8a API: 21 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=arm64 --platform=android-21 --toolchain=aarch64-linux-android-4.9 --install-dir=/Users/phildow/android-ndk/arm64-21-toolchain
+# cp -r sources /Users/phildow/android-ndk/arm64-21-toolchain/sources
 
-# ARCH: x86_64 API: 22 NDK: 16.1.4479499
-# ./build/tools/make-standalone-toolchain.sh --arch=x86_64 --platform=android-22 --toolchain=x86_64-4.9 --install-dir=/Users/phildow/android-ndk/x86_64-22-toolchain
-# cp -r sources /Users/phildow/android-ndk/x86_64-22-toolchain/sources
+# ARCH: x86_64 API: 21 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=x86_64 --platform=android-21 --toolchain=x86_64-4.9 --install-dir=/Users/phildow/android-ndk/x86_64-21-toolchain
+# cp -r sources /Users/phildow/android-ndk/x86_64-21-toolchain/sources
 
 # Example executions:
 
-# NDK_ROOT=/Users/phildow/android-ndk/arm-22-toolchain ./compile_android_protobuf_docai.sh -a armeabi-v7a
-# NDK_ROOT=/Users/phildow/android-ndk/arm64-22-toolchain ./compile_android_protobuf_docai.sh -a arm64-v8a
-# NDK_ROOT=/Users/phildow/android-ndk/x86_64-22-toolchain ./compile_android_protobuf_docai.sh -a x86_64
+# NDK_ROOT=/Users/phildow/android-ndk/arm-21-toolchain ./compile_android_protobuf_docai.sh -a armeabi-v7a
+# NDK_ROOT=/Users/phildow/android-ndk/arm64-21-toolchain ./compile_android_protobuf_docai.sh -a arm64-v8a
+# NDK_ROOT=/Users/phildow/android-ndk/x86_64-21-toolchain ./compile_android_protobuf_docai.sh -a x86_64
 
 # Pare Command Line Options
 
@@ -97,7 +97,7 @@ export CC="${bin_prefix}-gcc --sysroot $SYSROOT"
 export CXX="${bin_prefix}-g++ --sysroot $SYSROOT"
 export CXXSTL=$NDK_ROOT/sources/cxx-stl/gnu-libstdc++/4.9
 
-ANDROID_API_VERSION=22
+ANDROID_API_VERSION=21
 HOST=${bin_prefix}
 
 # Build

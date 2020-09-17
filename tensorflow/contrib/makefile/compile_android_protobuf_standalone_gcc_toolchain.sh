@@ -20,9 +20,23 @@
 
 # See also compile_android_protobuf_docai.sh
 
+# Create a standalone toolchain with the following commands:
+
+# ARCH: armeabi-v7a API: 21 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=arm --platform=android-21 --toolchain=arm-linux-androideabi-4.9 --install-dir=/Users/phildow/android-ndk/arm-21-toolchain
+# cp -r sources /Users/phildow/android-ndk/arm-21-toolchain/sources
+
+# ARCH: arm64-v8a API: 21 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=arm64 --platform=android-21 --toolchain=aarch64-linux-android-4.9 --install-dir=/Users/phildow/android-ndk/arm64-21-toolchain
+# cp -r sources /Users/phildow/android-ndk/arm64-21-toolchain/sources
+
+# ARCH: x86_64 API: 21 NDK: 16.1.4479499
+# ./build/tools/make-standalone-toolchain.sh --arch=x86_64 --platform=android-21 --toolchain=x86_64-4.9 --install-dir=/Users/phildow/android-ndk/x86_64-21-toolchain
+# cp -r sources /Users/phildow/android-ndk/x86_64-21-toolchain/sources
+
 # Example Usage:
-# NDK_ROOT=/Users/phildow/android-ndk/arm64-22-toolchain ANDROID_API_VERSION=22 tensorflow/contrib/makefile/compile_android_protobuf_standalone_gcc_toolchain.sh -a arm64-v8a
-# NDK_ROOT=/Users/phildow/android-ndk/x86_64-22-toolchain ANDROID_API_VERSION=22 tensorflow/contrib/makefile/compile_android_protobuf_standalone_gcc_toolchain.sh -a x86_64
+# NDK_ROOT=/Users/phildow/android-ndk/arm64-21-toolchain ANDROID_API_VERSION=21 tensorflow/contrib/makefile/compile_android_protobuf_standalone_gcc_toolchain.sh -a arm64-v8a
+# NDK_ROOT=/Users/phildow/android-ndk/x86_64-21-toolchain ANDROID_API_VERSION=21 tensorflow/contrib/makefile/compile_android_protobuf_standalone_gcc_toolchain.sh -a x86_64
 
 # Pass ANDROID_API_VERSION as an environment variable to support a different version of API.
 android_api_version="${ANDROID_API_VERSION:-21}"
@@ -130,14 +144,18 @@ fi
 echo "Android api version = ${android_api_version} cc_prefix = ${cc_prefix}"
 
 # Path and sysroot are same regardless the toolchain
+# Standalone toolchain doesn't require sysroot
 
 export PATH="${NDK_ROOT}/bin:$PATH"
-export SYSROOT="${NDK_ROOT}/sysroot"
+# export SYSROOT="${NDK_ROOT}/sysroot"
 
 # Compiler and standard libraries depend on toolchain
 
-export CC="${cc_prefix} ${bin_prefix}-gcc --sysroot ${SYSROOT}"
-export CXX="${cc_prefix} ${bin_prefix}-g++ --sysroot ${SYSROOT}"
+export CC="${cc_prefix} ${bin_prefix}-gcc"
+export CXX="${cc_prefix} ${bin_prefix}-g++"
+
+# export CC="${cc_prefix} ${bin_prefix}-gcc --sysroot ${SYSROOT}"
+# export CXX="${cc_prefix} ${bin_prefix}-g++ --sysroot ${SYSROOT}"
 # export CXXSTL="${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}"
 # export CXXSTL="${NDK_ROOT}/${bin_prefix}/lib"
 
@@ -157,11 +175,14 @@ LDFLAGS="-L${NDK_ROOT}/sources/cxx-stl/gnu-libstdc++/4.9/libs/${ARCHITECTURE}"
 LIBS="-llog -lz -lgnustl_static"
 CFLAGS="${march_option} -D__ANDROID_API__=${android_api_version}" \
 
+echo "Building ARCH=${ARCHITECTURE} API=${ANDROID_API_VERSION} HOST=${bin_prefix} NDK_ROOT=${NDK_ROOT}"
+
+# --with-sysroot="${SYSROOT}" \
+# --enable-cross-compile \
+# --disable-shared \
+
 ./configure --prefix="${GENDIR}/${ARCHITECTURE}" \
 --host="${bin_prefix}" \
---with-sysroot="${SYSROOT}" \
---disable-shared \
---enable-cross-compile \
 --with-protoc="${PROTOC_PATH}"
 
 if [ $? -ne 0 ]
