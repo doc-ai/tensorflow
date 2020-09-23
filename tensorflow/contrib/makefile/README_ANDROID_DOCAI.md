@@ -8,7 +8,7 @@ Building TensorFlow for Android on Ubuntu with a standalone clang toolchain for 
 Install the following packages:
 
 ```
-python build-essential git autoconf libtool automake curl unzip clang
+python build-essential zlib1g-dev git autoconf libtool automake curl unzip clang
 ```
 
 ## Toolchain
@@ -43,11 +43,10 @@ For both the protobuf and nysnc dependencies we will make three builds: a local 
 From tensorflow and specifically tensorflow/contrib/makefile run:
 
 ```
-$ mkdir gen
-$ mkdir gen/protobuf
-$ mkdir gen/protobuf/x86_64.linux
-$ mkdir gen/protobuf/x86_64.android
-$ mkdir gen/protobuf/arm64-v8.android
+$ mkdir gen-protobuf
+$ mkdir gen-protobuf/x86_64.linux
+$ mkdir gen-protobuf/x86_64.android
+$ mkdir gen-protobuf/arm64-v8.android
 ```
 
 From downloads/protobuf run:
@@ -66,7 +65,7 @@ $ cd builds/x86_64.linux
 $ export CC=clang
 $ export CXX=clang++
 
-$ ../../configure --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen/protobuf/x86_64.linux
+$ ../../configure --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.linux
 $ make install -j4
 ```
 
@@ -96,7 +95,7 @@ $ export CXX=aarch64-linux-android21-clang++
 $ export CFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
 
-$ ../../configure --host=aarch64-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen/protobuf/arm64-v8.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen/protobuf/x86_64.linux/bin/protoc
+$ ../../configure --host=aarch64-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/arm64-v8.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.linux/bin/protoc
 $ make install -j4
 ```
 
@@ -125,7 +124,7 @@ Otherwise you will run into the following error during *make install*:
 ./.libs/libprotoc.so: error: undefined reference to 'scc_info_FileDescriptorProto_google_2fprotobuf_2fdescriptor_2eproto'
 ```
 
-Reset the PATH variable, then run:
+Reset the PATH variable to remove the reference to the previously used NDK_ROOT, then run:
 
 ```
 $ mkdir builds/x86_64.android
@@ -139,7 +138,7 @@ $ export CXX=x86_64-linux-android21-clang++
 $ export CFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
 
-$ ../../configure --host=x86_64-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen/protobuf/x86_64.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen/protobuf/x86_64.linux/bin/protoc
+$ ../../configure --host=x86_64-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.linux/bin/protoc
 $ make install -j4
 ```
 
@@ -176,14 +175,14 @@ $ unset LDFLAGS
 From *tensorflow/contrib/makefile/downloads/nsync*
 
 ```
-$ cd builds/x86_64.linux.clang
+$ cd builds/x86_64.linux.c++11
 $ make depend nsync.a
 ```
 
 Outputs to (local directory):
 
 ```
-tensorflow/contrib/makefile/downloads/nsync/builds/x86_64.linux.clang/nsync.a
+tensorflow/contrib/makefile/downloads/nsync/builds/x86_64.linux.c++11/nsync.a
 ```
 
 Check architecture:
@@ -192,7 +191,7 @@ Check architecture:
 objdump -f nsync.a
 ```
 
-**Build android arm64 library:**
+**Build android arm64-v8 library:**
 
 Update the NDK_ROOT and PATH:
 
@@ -325,9 +324,86 @@ $ unset NDK_ROOT
 
 For this we'll use the ready made Makefile that we have modified for use with clang.
 
-Copy the protobuf build dirs to the locations expected by the makefile:
+**Prepare Protoc**
+
+First tell protoc where to find the shared protobuf library. The host protoc application is used to translate a number of protobuf files into c++ files that will be compiled for android:
+
+From the root tensorflow repo directory:
 
 ```
-protobuf-host
-protobuf_android/arm64-v8a
+$ export LD_LIBRARY_PATH=./tensorflow/contrib/makefile/gen/protobuf-host/lib/
+```
+
+**Prepare Protobuf Build Dirs**
+
+Next symlink the protobuf build dirs to the locations expected by the makefile. 
+
+We built to *gen/protobuf/x86_64.linux* but the tensorflow Makefile expects the build results at *gen/protobuf-host*. 
+
+Similarly we built to *gen/protobuf/arm64-v8.android* and *gen/protobuf/x86_64.android* but the Makefile expects these built results at *gen/protobuf_android/arm64-v8a* and *gen/protobuf_android/x86_64* respectively.
+
+From *tensorflow/contrib/makefile*:
+
+```
+$ mkdir gen
+$ cd gen
+
+$ ln -s ../gen-protobuf/x86_64.linux/ protobuf-host
+
+$ mkdir protobuf_android
+$ cd protobuf_android
+
+$ ln -s ../../gen-protobuf/arm64-v8.android/ arm64-v8a
+$ ln -s ../../gen-protobuf/x86_64.android/ x86_64
+```
+
+**Prepare Nsync Path**
+
+Export the host nsync path:
+
+```
+$ export HOST_NSYNC_BUILD=x86_64.linux.c++11
+```
+
+**Build Android arm64-v8 library:**
+
+Update the NDK_ROOT but do not update PATH
+
+```
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
+```
+
+Export the target nysnc path:
+
+```
+$ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/aarch64.android.clang/nsync.a
+```
+
+From the repository's root directory, compile tensorflow and grab yourself a cup of coffee:
+
+```
+$ make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID ANDROID_ARCH=arm64-v8a
+```
+
+If you find that you must rebuild clean the all directories in *gen* that you did not create yourself:
+
+```
+$ rm -r dep
+$ rm -r host_bin
+$ rm -r host_obj
+$ rm -r obj
+$ rm -r proto
+$ rm -r proto_text
+```
+
+Outputs results in *tensorflow/contrib/makefile* to:
+
+```
+gen/lib/android_arm64-v8a/libtensorflow-core.a
+```
+
+Confirm archicture:
+
+```
+~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen/lib/android_arm64-v8a/libtensorflow-core.a
 ```
