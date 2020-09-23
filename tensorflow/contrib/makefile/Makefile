@@ -73,12 +73,14 @@ HOST_BINDIR := $(MAKEFILE_DIR)/gen/host_bin/
 HOST_GENDIR := $(MAKEFILE_DIR)/gen/host_obj/
 
 # Settings for the host compiler.
-HOST_CXX := $(CC_PREFIX) gcc
-HOST_CXXFLAGS := --std=c++11
+# HOST_CXX := $(CC_PREFIX) gcc
+# HOST_CXXFLAGS := --std=c++11
+HOST_CXX := $(CC_PREFIX) clang++
 HOST_LDOPTS :=
 ifeq ($(HAS_GEN_HOST_PROTOC),true)
 	HOST_LDOPTS += -L$(MAKEFILE_DIR)/gen/protobuf-host/lib
 endif
+HOST_LDOPTS += -L$(MAKEFILE_DIR)/downloads/nsync/builds/$(HOST_NSYNC_BUILD)
 HOST_LDOPTS += -L/usr/local/lib
 
 HOST_INCLUDES := \
@@ -100,7 +102,7 @@ endif
 HOST_INCLUDES += -I/usr/local/include
 
 HOST_LIBS := \
-$(HOST_NSYNC_LIB) \
+-lnsync \
 -lstdc++ \
 -lprotobuf \
 -lpthread \
@@ -350,20 +352,17 @@ ifeq ($(TARGET),ANDROID)
 	ifndef NDK_ROOT
     $(error "NDK_ROOT is not defined.")
 	endif
-	CXX := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-g++
-	CC := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-gcc
+	# CXX := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-g++
+	# CC := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-gcc
+	CXX := $(NDK_ROOT)/bin/aarch64-linux-android21-clang++
+	CC := $(NDK_ROOT)/bin/aarch64-linux-android21-clang
 	CXXFLAGS +=\
---sysroot $(NDK_ROOT)/platforms/android-21/arch-$(SYSROOT_ARCH) \
 -Wno-narrowing \
 -fomit-frame-pointer \
 $(MARCH_OPTION) \
 -fPIE \
 -fPIC
 	INCLUDES = \
--I$(NDK_ROOT)/sources/android/support/include \
--I$(NDK_ROOT)/sysroot/usr/include/$(BIN_PREFIX) \
--I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/include \
--I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(ANDROID_ARCH)/include \
 -I. \
 -I$(MAKEFILE_DIR)/downloads/ \
 -I$(MAKEFILE_DIR)/downloads/eigen \
@@ -377,11 +376,12 @@ $(MARCH_OPTION) \
 -I$(PBTGENDIR)
 
 	# otherwise std:stoi is unavailable
-	CXXFLAGS += -D_GLIBCXX_USE_C99
+	# CXXFLAGS += -D_GLIBCXX_USE_C99
+
+	# -lgnustl_static
 
 	LIBS := \
 $(TARGET_NSYNC_LIB) \
--lgnustl_static \
 -lprotobuf \
 -llog \
 -lz \
@@ -389,17 +389,17 @@ $(TARGET_NSYNC_LIB) \
 -ldl \
 -latomic
 
-	LD := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/$(BIN_PREFIX)/bin/ld
+	# LD := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/$(BIN_PREFIX)/bin/ld
 
 	LDFLAGS := \
 $(MARCH_OPTION) \
 -L$(MAKEFILE_DIR)/gen/protobuf_android/$(ANDROID_ARCH)/lib \
--L$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(ANDROID_ARCH) \
 -fPIE \
 -pie \
 -v
 
-	AR := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-ar
+	# AR := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-ar
+	AR := $(NDK_ROOT)/bin/aarch64-linux-android-ar
 	ARFLAGS := r
 	LIBFLAGS += -Wl,--allow-multiple-definition -Wl,--whole-archive
 
@@ -920,12 +920,12 @@ $(PROTO_TEXT_OBJS) : $(PROTO_TEXT_PB_H_FILES)
 
 # Ensures we link CoreFoundation as it is used for time library when building
 # for Mac and iOS
-# ifeq ($(TARGET),OSX)
+ifeq ($(TARGET),OSX)
   ifeq ($(HOST_ARCH),x86_64)
     HOST_LDOPTS += -framework CoreFoundation
-    # LIBS += -framework CoreFoundation
+    LIBS += -framework CoreFoundation
   endif
-# endif
+endif
 ifeq ($(TARGET),IOS)
   HOST_LDOPTS += -framework CoreFoundation
 endif
