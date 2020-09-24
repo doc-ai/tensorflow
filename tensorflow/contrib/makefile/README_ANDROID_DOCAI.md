@@ -87,7 +87,7 @@ objdump -f gen/protobuf/x86_64.linux/lib/libprotobuf.a
 $ mkdir builds/arm64-v8.android
 $ cd builds/arm64-v8.android
 
-$ export NDK_ROOT=/home/phildow/android-toolchains/ndk-19-api-21-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 
 $ export CC=aarch64-linux-android21-clang
@@ -130,7 +130,7 @@ Reset the PATH variable to remove the reference to the previously used NDK_ROOT,
 $ mkdir builds/x86_64.android
 $ cd builds/x86_64.android
 
-$ export NDK_ROOT=/home/phildow/android-toolchains/ndk-19-api-21-x86_64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86_64-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 
 $ export CC=x86_64-linux-android21-clang
@@ -385,16 +385,7 @@ From the repository's root directory, compile tensorflow and grab yourself a cup
 $ make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID ANDROID_ARCH=arm64-v8a
 ```
 
-If you find that you must rebuild clean the all directories in *gen* that you did not create yourself:
-
-```
-$ rm -r dep
-$ rm -r host_bin
-$ rm -r host_obj
-$ rm -r obj
-$ rm -r proto
-$ rm -r proto_text
-```
+If you find that you must rebuild clean the all directories in *gen* that you did not create yourself. Refer to the list in the last step of this section below.
 
 Outputs results in *tensorflow/contrib/makefile* to:
 
@@ -407,3 +398,48 @@ Confirm archicture:
 ```
 ~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen/lib/android_arm64-v8a/libtensorflow-core.a
 ```
+
+Clean the gen directories for the next build. We don't run *make clean* because it completely blows out the gen dir.
+
+```
+$ rm -r dep
+$ rm -r host_bin
+$ rm -r host_obj
+$ rm -r obj
+$ rm -r proto
+$ rm -r proto_text
+```
+
+**Build Android x86_64 (emulator) library:**
+
+Update the NDK_ROOT but do not update PATH
+
+```
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86_64-clang
+```
+
+Export the target nysnc path:
+
+```
+$ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/x86_64.android.clang/nsync.a
+```
+
+From the repository's root directory, compile tensorflow and grab yourself a another cup of coffee:
+
+```
+$ make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID ANDROID_ARCH=x86_64
+```
+
+Outputs results in *tensorflow/contrib/makefile* to:
+
+```
+gen/lib/android_x86_64/libtensorflow-core.a
+```
+
+Confirm archicture:
+
+```
+~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/lib/android_x86_64/libtensorflow-core.a
+```
+
+

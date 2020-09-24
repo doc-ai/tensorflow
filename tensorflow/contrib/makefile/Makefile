@@ -343,6 +343,13 @@ ifeq ($(TARGET),ANDROID)
 		BIN_PREFIX := x86_64-linux-android
 		MARCH_OPTION :=
 	endif
+	
+	ifeq ($(ANDROID_ARCH),arm64-v8a)
+		ARCH_PREFIX := aarch64
+	endif
+	ifeq ($(ANDROID_ARCH),x86_64)
+		ARCH_PREFIX := x86_64
+	endif
 
 	# --sysroot $(NDK_ROOT)/sysroot
 	# --sysroot $(NDK_ROOT)/platforms/android-21/arch-$(SYSROOT_ARCH)
@@ -354,8 +361,8 @@ ifeq ($(TARGET),ANDROID)
 	endif
 	# CXX := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-g++
 	# CC := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-gcc
-	CXX := $(NDK_ROOT)/bin/aarch64-linux-android21-clang++
-	CC := $(NDK_ROOT)/bin/aarch64-linux-android21-clang
+	CXX := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android21-clang++
+	CC := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android21-clang
 	CXXFLAGS +=\
 -Wno-narrowing \
 -fomit-frame-pointer \
@@ -399,7 +406,7 @@ $(MARCH_OPTION) \
 -v
 
 	# AR := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-ar
-	AR := $(NDK_ROOT)/bin/aarch64-linux-android-ar
+	AR := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android-ar
 	ARFLAGS := r
 	LIBFLAGS += -Wl,--allow-multiple-definition -Wl,--whole-archive
 
