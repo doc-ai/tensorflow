@@ -3,6 +3,16 @@
 
 Building TensorFlow for Android on Ubuntu with a standalone clang toolchain for API 21 from NDK 19.2.5345600.
 
+These instructions are based on the following resources:
+
+https://becominghuman.ai/how-to-build-tensorflow-as-a-static-library-for-android-5c762dbdd5d4
+
+https://forum.qt.io/topic/108704/building-protobuff-libs-for-android-64-bit-arm64-v8a-qt-5-12-4
+
+For more information about the NDK:
+
+https://developer.android.com/ndk/guides
+
 ## Package Prequisites
 
 Install the following packages:
@@ -93,6 +103,7 @@ $ export PATH=$NDK_ROOT/bin:$PATH
 $ export CC=aarch64-linux-android21-clang
 $ export CXX=aarch64-linux-android21-clang++
 $ export CFLAGS="-fPIE -fPIC"
+$ export CPPFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
 
 $ ../../configure --host=aarch64-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/arm64-v8.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.linux/bin/protoc
@@ -117,6 +128,22 @@ Patch the source according to the instructions here:
 
 https://github.com/protocolbuffers/protobuf/issues/5144#issuecomment-688723405
 
+Specifically, modify *src/libprotoc.map,* *src/libprotobuf.map*, and *src/libprotobuf-lite.map* so that they look like:
+
+```
+{
+  global:
+    extern "C++" {
+      *google*;
+    };
+    scc_info_*;
+    descriptor_table_*;
+
+  local:
+    *;
+};
+```
+
 Otherwise you will run into the following error during *make install*:
 
 ```
@@ -136,6 +163,7 @@ $ export PATH=$NDK_ROOT/bin:$PATH
 $ export CC=x86_64-linux-android21-clang
 $ export CXX=x86_64-linux-android21-clang++
 $ export CFLAGS="-fPIE -fPIC"
+$ export CPPFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
 
 $ ../../configure --host=x86_64-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86_64.linux/bin/protoc
@@ -442,4 +470,18 @@ Confirm archicture:
 ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/lib/android_x86_64/libtensorflow-core.a
 ```
 
+## Binaries
 
+You now have the required binaries at the following paths:
+
+**arm64-v8:**
+
+```
+
+```
+
+**x86_64 (emulator):**
+
+```
+
+```
