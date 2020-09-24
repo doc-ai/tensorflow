@@ -27,11 +27,12 @@ NDK 19?+ contain prebuilt toolchains, but you can build standalone toolchains as
 
 From Android Studio install NDK 19.2.5345600. It will be located at *~/Android/Sdk/ndk*
 
-From the NDK 19.2.5345600 root directory create two standalone toolchains, one for arm64 (on device) and one for x86_64 (emulator):
+From the NDK 19.2.5345600 root directory create three standalone toolchains, one for arm64-v8a (on device) and two for emulator support on x86 and x86_64:
 
 ```
 $ build/tools/make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir $HOME/android-toolchains/ndk-19-api-21-arm64-clang
 $ build/tools/make_standalone_toolchain.py --arch x86_64 --api 21 --stl libc++ --install-dir $HOME/android-toolchains/ndk-19-api-21-x86_64-clang
+$ build/tools/make_standalone_toolchain.py --arch x86 --api 21 --stl libc++ --install-dir $HOME/android-toolchains/ndk-19-api-21-x86-clang
 ```
 
 **TODO:**
@@ -55,8 +56,9 @@ From tensorflow and specifically tensorflow/contrib/makefile run:
 ```
 $ mkdir gen-protobuf
 $ mkdir gen-protobuf/x86_64.linux
-$ mkdir gen-protobuf/x86_64.android
 $ mkdir gen-protobuf/arm64-v8.android
+$ mkdir gen-protobuf/x86_64.android
+$ mkdir gen-protobuf/x86.android
 ```
 
 From downloads/protobuf run:
@@ -82,13 +84,13 @@ $ make install -j4
 Outputs to:
 
 ```
-gen/protobuf/x86_64.linux/lib/libprotobuf.a
+gen-protobuf/x86_64.linux/lib/libprotobuf.a
 ```
 
 Confirm the architecture:
 
 ```
-objdump -f gen/protobuf/x86_64.linux/lib/libprotobuf.a
+objdump -f gen-protobuf/x86_64.linux/lib/libprotobuf.a
 ```
 
 **Build android arm64-v8 library**
@@ -113,13 +115,13 @@ $ make install -j4
 Outputs to:
 
 ```
-gen/protobuf/arm64-v8.android/lib/libprotobuf.a
+gen-protobuf/arm64-v8.android/lib/libprotobuf.a
 ```
 
 Confirm the architecture:
 
 ```
-~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen/protobuf/arm64-v8.android/lib/libprotobuf.a
+~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen-protobuf/arm64-v8.android/lib/libprotobuf.a
 ```
 
 **Build android x86_64 library for emulator**
@@ -173,13 +175,48 @@ $ make install -j4
 Outputs to:
 
 ```
-gen/protobuf/x86_64.android/lib/libprotobuf.a
+gen-protobuf/x86_64.android/lib/libprotobuf.a
 ```
 
 Confirm the architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/protobuf/x86_64.linux/lib/libprotobuf.a
+$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen-protobuf/x86_64.android/lib/libprotobuf.a
+```
+
+**Build android x86 library for emulator**
+
+If you have not already done so patch the source according to the x86_64 instructions above.
+
+Reset the PATH variable to remove the reference to the previously used NDK_ROOT, then run:
+
+```
+$ mkdir builds/x86.android
+$ cd builds/x86.android
+
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86-clang
+$ export PATH=$NDK_ROOT/bin:$PATH
+
+$ export CC=i686-linux-android21-clang
+$ export CXX=i686-linux-android21-clang++
+$ export CFLAGS="-fPIE -fPIC"
+$ export CPPFLAGS="-fPIE -fPIC"
+$ export LDFLAGS="-pie -llog"
+
+$ ../../configure --host=i686-linux-android --prefix=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86.android --with-protoc=/home/phildow/GitHub/tensorflow/tensorflow/contrib/makefile/gen-protobuf/x86.linux/bin/protoc
+$ make install -j4
+```
+
+Outputs to:
+
+```
+gen-protobuf/x86.android/lib/libprotobuf.a
+```
+
+Confirm the architecture:
+
+```
+~/android-toolchains/ndk-19-api-21-x86-clang/bin/i686-linux-android-objdump -f gen-protobuf/x86.android/lib/libprotobuf.a
 ```
 
 **Cleanup**
@@ -339,6 +376,66 @@ Confirm the architecture:
 $ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f nsync.a
 ```
 
+**Build android x86_64 library for emulator:**
+
+First reset the PATH variable then update the NDK_ROOT and PATH:
+
+```
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86-clang
+$ export PATH=$NDK_ROOT/bin:$PATH
+```
+
+From *downloads/nsync:*
+
+```
+$ mkdir builds/x86.android.clang
+$ cd builds/x86.android.clang
+$ touch Makefile
+$ touch dependfile
+```
+
+Add the following to the Makefile, which is taken from the *android* target in *compile_nysnc.sh*:
+
+```
+AR=i686-linux-android-ar
+CC=i686-linux-android21-clang++
+PLATFORM_CPPFLAGS=-DNSYNC_USE_CPP11_TIMEPOINT -DNSYNC_ATOMIC_CPP11 \
+                    -I../../platform/c++11 -I../../platform/gcc \
+                    -I../../platform/posix -pthread
+PLATFORM_CFLAGS=-std=c++11 -Wno-narrowing -fPIE -fPIC
+PLATFORM_LDFLAGS=-pthread
+MKDEP=${CC} -x c++ -M -std=c++11
+PLATFORM_C=../../platform/c++11/src/nsync_semaphore_mutex.cc \
+            ../../platform/posix/src/per_thread_waiter.c \
+            ../../platform/c++11/src/yield.cc \
+            ../../platform/c++11/src/time_rep_timespec.cc \
+            ../../platform/c++11/src/nsync_panic.cc
+PLATFORM_OBJS=nsync_semaphore_mutex.o per_thread_waiter.o yield.o \
+                time_rep_timespec.o nsync_panic.o
+TEST_PLATFORM_C=../../platform/c++11/src/start_thread.cc
+TEST_PLATFORM_OBJS=start_thread.o
+include ../../platform/posix/make.common
+include dependfile
+```
+
+Run:
+
+```
+$ make depend nsync.a
+```
+
+Outputs to (local directory):
+
+```
+tensorflow/contrib/makefile/downloads/nsync/builds/x86.android.clang/nsync.a
+```
+
+Confirm the architecture:
+
+```
+$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/i686-linux-android-objdump -f nsync.a
+```
+
 **Cleanup**
 
 Unset NDK_ROOT and clean up your PATH:
@@ -366,9 +463,9 @@ $ export LD_LIBRARY_PATH=./tensorflow/contrib/makefile/gen/protobuf-host/lib/
 
 Next symlink the protobuf build dirs to the locations expected by the makefile. 
 
-We built to *gen/protobuf/x86_64.linux* but the tensorflow Makefile expects the build results at *gen/protobuf-host*. 
+We built to *gen-protobuf/x86_64.linux* but the tensorflow Makefile expects the build results at *gen/protobuf-host*. 
 
-Similarly we built to *gen/protobuf/arm64-v8.android* and *gen/protobuf/x86_64.android* but the Makefile expects these built results at *gen/protobuf_android/arm64-v8a* and *gen/protobuf_android/x86_64* respectively.
+Similarly we built to *gen-protobuf/arm64-v8.android* and *gen-protobuf/x86_64.android* but the Makefile expects these built results at *gen/protobuf_android/arm64-v8a* and *gen/protobuf_android/x86_64* respectively.
 
 From *tensorflow/contrib/makefile*:
 
@@ -383,6 +480,7 @@ $ cd protobuf_android
 
 $ ln -s ../../gen-protobuf/arm64-v8.android/ arm64-v8a
 $ ln -s ../../gen-protobuf/x86_64.android/ x86_64
+$ ln -s ../../gen-protobuf/x86.android/ x86
 ```
 
 **Prepare Nsync Path**
@@ -421,10 +519,10 @@ Outputs results in *tensorflow/contrib/makefile* to:
 gen/lib/android_arm64-v8a/libtensorflow-core.a
 ```
 
-Confirm archicture:
+Confirm architecture:
 
 ```
-~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen/lib/android_arm64-v8a/libtensorflow-core.a
+$ ~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen/lib/android_arm64-v8a/libtensorflow-core.a
 ```
 
 Clean the gen directories for the next build. We don't run *make clean* because it completely blows out the gen dir.
@@ -464,24 +562,79 @@ Outputs results in *tensorflow/contrib/makefile* to:
 gen/lib/android_x86_64/libtensorflow-core.a
 ```
 
-Confirm archicture:
+Confirm architecture:
 
 ```
-~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/lib/android_x86_64/libtensorflow-core.a
+$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/lib/android_x86_64/libtensorflow-core.a
+```
+
+Clean the gen directories for the next build. We don't run *make clean* because it completely blows out the gen dir.
+
+```
+$ rm -r dep
+$ rm -r host_bin
+$ rm -r host_obj
+$ rm -r obj
+$ rm -r proto
+$ rm -r proto_text
+```
+
+**Build Android x86 (emulator) library:**
+
+Update the NDK_ROOT but do not update PATH
+
+```
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86-clang
+```
+
+Export the target nysnc path:
+
+```
+$ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/x86.android.clang/nsync.a
+```
+
+From the repository's root directory, compile tensorflow and grab yourself another cup of coffee:
+
+```
+$ make -f tensorflow/contrib/makefile/Makefile TARGET=ANDROID ANDROID_ARCH=x86
+```
+
+Outputs results in *tensorflow/contrib/makefile* to:
+
+```
+gen/lib/android_x86/libtensorflow-core.a
+```
+
+Confirm architecture:
+
+```
+$ ~/android-toolchains/ndk-19-api-21-x86-clang/bin/i686-linux-android-objdump -f gen/lib/android_x86/libtensorflow-core.a
 ```
 
 ## Binaries
 
-You now have the required binaries at the following paths:
+You now have the required binaries at the following paths in *tensorflow/contrib/makefile*
 
 **arm64-v8:**
 
 ```
-
+gen-protobuf/arm64-v8.android/lib/libprotobuf.a
+downloads/nsync/builds/aarch64.android.clang/nsync.a
+gen/lib/android_arm64-v8a/libtensorflow-core.a
 ```
 
 **x86_64 (emulator):**
 
 ```
+gen-protobuf/x86_64.android/lib/libprotobuf.a
+downloads/nsync/builds/x86-64.android.clang/libnsync.a
+gen/lib/android_x86_64/libtensorflow-core.a
+```
 
+**x86 (emulator):**
+
+```
+gen-protobuf/x86.android/lib/libprotobuf.a
+downloads/nsync/builds/x86.android.clang/libnsync.a
+gen/lib/android_x86/libtensorflow-core.a
 ```

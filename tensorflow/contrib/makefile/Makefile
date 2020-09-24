@@ -343,12 +343,17 @@ ifeq ($(TARGET),ANDROID)
 		BIN_PREFIX := x86_64-linux-android
 		MARCH_OPTION :=
 	endif
+
+	# Standalone toolchain
 	
 	ifeq ($(ANDROID_ARCH),arm64-v8a)
 		ARCH_PREFIX := aarch64
 	endif
 	ifeq ($(ANDROID_ARCH),x86_64)
 		ARCH_PREFIX := x86_64
+	endif
+	ifeq ($(ANDROID_ARCH),x86)
+		ARCH_PREFIX := i686
 	endif
 
 	# --sysroot $(NDK_ROOT)/sysroot
