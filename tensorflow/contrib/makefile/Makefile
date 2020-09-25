@@ -51,6 +51,11 @@ ifeq ($(ANDROID_TYPES),)
 	ANDROID_TYPES := -D__ANDROID_TYPES_SLIM__
 endif
 
+# If ANDROID_API_VERSION is not set assume 21
+ifeq ($(ANDROID_API_VERSION),)
+	ANDROID_API_VERSION := 21
+endif
+
 # Try to figure out the host system
 HOST_OS :=
 ifeq ($(OS),Windows_NT)
@@ -366,8 +371,8 @@ ifeq ($(TARGET),ANDROID)
 	endif
 	# CXX := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-g++
 	# CC := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-gcc
-	CXX := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android21-clang++
-	CC := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android21-clang
+	CXX := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android$(ANDROID_API_VERSION)-clang++
+	CC := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android$(ANDROID_API_VERSION)-clang
 	CXXFLAGS +=\
 -Wno-narrowing \
 -fomit-frame-pointer \
