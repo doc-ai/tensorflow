@@ -680,6 +680,7 @@ $(wildcard tensorflow/core/platform/*/*.cc) \
 $(wildcard tensorflow/core/platform/*/*/*.cc) \
 $(wildcard tensorflow/core/util/*.cc) \
 $(wildcard tensorflow/core/util/*/*.cc) \
+$(wildcard tensorflow/cc/saved_model/*.cc) \
 $(wildcard tensorflow/contrib/makefile/downloads/double_conversion/double-conversion/*.cc) \
 tensorflow/core/profiler/internal/profiler_interface.cc \
 tensorflow/core/profiler/internal/traceme_recorder.cc \
@@ -720,6 +721,7 @@ $(wildcard tensorflow/core/platform/windows/*) \
 $(wildcard tensorflow/core/grappler/inputs/trivial_test_graph_input_yielder.*) \
 $(wildcard tensorflow/core/grappler/inputs/file_input_yielder.*) \
 $(wildcard tensorflow/core/grappler/clusters/single_machine.*) \
+$(wildcard tensorflow/cc/saved_model/*test.cc) \
 tensorflow/core/util/gpu_kernel_helper_test.cu.cc
 
 CORE_CC_EXCLUDE_SRCS := \
