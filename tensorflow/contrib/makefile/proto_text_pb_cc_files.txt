@@ -35,6 +35,7 @@ tensorflow/core/protobuf/meta_graph.pb.cc
 tensorflow/core/protobuf/named_tensor.pb.cc
 tensorflow/core/protobuf/queue_runner.pb.cc
 tensorflow/core/protobuf/rewriter_config.pb.cc
+tensorflow/core/protobuf/saved_model.pb.cc
 tensorflow/core/protobuf/saved_object_graph.pb.cc
 tensorflow/core/protobuf/saver.pb.cc
 tensorflow/core/protobuf/struct.pb.cc
