@@ -374,6 +374,7 @@ ifeq ($(TARGET),ANDROID)
 	CXX := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android$(ANDROID_API_VERSION)-clang++
 	CC := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android$(ANDROID_API_VERSION)-clang
 	CXXFLAGS +=\
+$(ANDROID_TYPES) \
 -Wno-narrowing \
 -fomit-frame-pointer \
 $(MARCH_OPTION) \
