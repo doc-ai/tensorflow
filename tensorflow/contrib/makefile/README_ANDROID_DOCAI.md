@@ -44,27 +44,27 @@ $ export ANDROID_API_VERSION=22
 For each step you should also refer to your toolchain when exporting NDK_ROOT. For example, replace:
 
 ```
-export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
 ```
 
 with:
 
 ```
-export NDK_ROOT=~/android-toolchains/ndk-19-api-22-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-19-api-22-arm64-clang
 ```
 
 For each step you will also need to replace the values set for CC and CXX to reflect that change. For example, replace:
 
 ```
 $ export CC=aarch64-linux-android21-clang
-$ export CXX= aarch64-linux-android21-clang++
+$ export CXX=aarch64-linux-android21-clang++
 ```
 
 with:
 
 ```
 $ export CC=aarch64-linux-android22-clang
-$ export CXX= aarch64-linux-android22-clang++
+$ export CXX=aarch64-linux-android22-clang++
 ```
 
 You must do this anywhere CC and CXX are set and for each architecture.
@@ -77,7 +77,7 @@ Download the required dependencies. From the tensorflow root directory run:
 $ tensorflow/contrib/makefile/download_dependencies.sh
 ```
 
-For both the protobuf and nysnc dependencies we will make three builds: a local x86_64 build and then adroid arm64 (on device) and x86_64 (emulator) builds. For tensorflow we will only make the two android builds.
+For both the protobuf and nysnc dependencies we will make four builds: a local x86_64 linux build and then android arm64 (on device), x86_64 (emulator), and x86 (emulator) builds. For tensorflow we will only make the three android builds.
 
 ## Build protobuf with clang
 
@@ -489,7 +489,15 @@ $ unset NDK_ROOT
 
 ## Build TensorFlow with clang
 
-For this we'll use the ready made Makefile that we have modified for use with clang.
+For this we'll use the provided Makefile that we have modified for use with clang.
+
+**Set Android Types**
+
+If you would like to build with support for int64 ops set ANDROID_TYPS. This increases the build sizes but may be required for your models:
+
+```
+export ANDROID_TYPES=-D__ANDROID_TYPES_FULL__
+```
 
 **Prepare Protoc**
 
@@ -507,7 +515,7 @@ Next symlink the protobuf build dirs to the locations expected by the makefile.
 
 We built to *gen-protobuf/x86_64.linux* but the tensorflow Makefile expects the build results at *gen/protobuf-host*. 
 
-Similarly we built to *gen-protobuf/arm64-v8.android* and *gen-protobuf/x86_64.android* but the Makefile expects these built results at *gen/protobuf_android/arm64-v8a* and *gen/protobuf_android/x86_64* respectively.
+Similarly we built to *gen-protobuf/arm64-v8.android*, *gen-protobuf/x86_64.android*, and *gen-protobuf/x86.android* but the Makefile expects these built results at *gen/protobuf_android/arm64-v8a*, *gen/protobuf_android/x86_64* and *gen/protobuf_android/x86* respectively.
 
 From *tensorflow/contrib/makefile*:
 
