@@ -81,7 +81,7 @@ For both the protobuf and nysnc dependencies we will make three builds: a local 
 
 ## Build protobuf with clang
 
-From tensorflow and specifically tensorflow/contrib/makefile run:
+From tensorflow and specifically *tensorflow/contrib/makefile* run:
 
 ```
 $ mkdir gen-protobuf
@@ -91,7 +91,7 @@ $ mkdir gen-protobuf/x86_64.android
 $ mkdir gen-protobuf/x86.android
 ```
 
-From downloads/protobuf run:
+From *downloads/protobuf* run:
 
 ```
 $ mkdir builds
@@ -277,6 +277,13 @@ From *tensorflow/contrib/makefile/downloads/nsync*
 ```
 $ cd builds/x86_64.linux.c++11
 $ make depend nsync.a
+```
+
+If you get an error try removing the *dependfile* and re-creating it:
+
+```
+$ rm dependfile
+$ touch dependfile
 ```
 
 Outputs to (local directory):
@@ -643,7 +650,7 @@ $ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/x86
 Optionally set the API version you are compiling again. API 21 is the default value. For example:
 
 ```
-$ export ANDROID_API_VERSION=22
+$ export ANDROID_API_VERSION=21
 ```
 
 From the repository's root directory, compile tensorflow and grab yourself another cup of coffee:
