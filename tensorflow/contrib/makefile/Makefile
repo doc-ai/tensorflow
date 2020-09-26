@@ -11,6 +11,10 @@
 # the first for the host (the machine you're compiling on) and the second for
 # the target (the machine you want the program to run on).
 
+# DOC.AI
+# This Makefile has been modified to use the NDK standalone toolchainly only with
+# the clang frontend.
+
 SHELL := /bin/bash
 
 # Host compilation settings
