@@ -412,7 +412,6 @@ $(TARGET_NSYNC_LIB) \
 	LDFLAGS := \
 $(MARCH_OPTION) \
 -L$(MAKEFILE_DIR)/gen/protobuf_android/$(ANDROID_ARCH)/lib \
--L$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(ANDROID_ARCH) \
 -fPIE \
 -pie \
 -v
