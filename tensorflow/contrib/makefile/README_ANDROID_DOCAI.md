@@ -491,6 +491,14 @@ $ unset NDK_ROOT
 
 For this we'll use the ready made Makefile that we have modified for use with clang.
 
+**Set Android Types**
+
+If you would like to build with support for int64 ops set ANDROID_TYPS. This increases the build sizes but may be required for your models:
+
+```
+export ANDROID_TYPES=-D__ANDROID_TYPES_FULL__
+```
+
 **Prepare Protoc**
 
 First tell protoc where to find the shared protobuf library. The host protoc application is used to translate a number of protobuf files into c++ files that will be compiled for android:
