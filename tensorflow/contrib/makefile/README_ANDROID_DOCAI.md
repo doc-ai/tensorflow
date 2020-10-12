@@ -1,7 +1,7 @@
 
 # Compiling TensorFlow For Android With clang
 
-Building TensorFlow for Android on Ubuntu with a standalone clang toolchain for API 21 from NDK 19.2.5345600.
+Building TensorFlow for Android on Ubuntu with a standalone clang toolchain for API 22 from NDK 21.1.6352462.
 
 These instructions are based on the following resources:
 
@@ -25,46 +25,52 @@ python build-essential zlib1g-dev git autoconf libtool automake curl unzip clang
 
 NDK 19?+ contain prebuilt toolchains, but you can build standalone toolchains as well. We'll start with standalone toolchains because that is what I have instructions for.
 
-From Android Studio install NDK 19.2.5345600. It will be located at *~/Android/Sdk/ndk*
+From Android Studio install NDK 21.1.6352462. It will be located at *~/Android/Sdk/ndk*
 
-From the NDK 19.2.5345600 root directory create three standalone toolchains, one for arm64-v8a (on device) and two for emulator support on x86 and x86_64:
+From the NDK 21.1.6352462 root directory create three standalone toolchains, one for arm64-v8a (on device) and two for emulator support on x86 and x86_64. We're placing all these toolchains in an *android-toolchains* in our home directory:
 
 ```
-$ build/tools/make_standalone_toolchain.py --arch arm64 --api 21 --stl libc++ --install-dir $HOME/android-toolchains/ndk-19-api-21-arm64-clang
-$ build/tools/make_standalone_toolchain.py --arch x86_64 --api 21 --stl libc++ --install-dir $HOME/android-toolchains/ndk-19-api-21-x86_64-clang
-$ build/tools/make_standalone_toolchain.py --arch x86 --api 21 --stl libc++ --install-dir $HOME/android-toolchains/ndk-19-api-21-x86-clang
+$ build/tools/make_standalone_toolchain.py --arch arm64 --api 22 --stl libc++ --install-dir $HOME/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang
+$ build/tools/make_standalone_toolchain.py --arch x86_64 --api 22 --stl libc++ --install-dir $HOME/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang
+$ build/tools/make_standalone_toolchain.py --arch x86 --api 22 --stl libc++ --install-dir $HOME/android-toolchains/ndk-21.1.6352462-api-22-x86-clang
 ```
 
-The instructions below assume a default API version of 21. If you change this value for your toolchain, be sure to set ANDROID_API_VERSION before executing the commands below. For example, if your toolchain uses API 22:
+You should also export the `ANDROID_API_VERSION` for the tensorflow build step. The remaining instructions below assume a default API version of 22. If you change this value for your toolchain, be sure to set `ANDROID_API_VERSION` as well:
 
 ```
 $ export ANDROID_API_VERSION=22
 ```
 
+If you were building with API 28 instead, use:
+
+```
+$ export ANDROID_API_VERSION=28
+```
+
 For each step you should also refer to your toolchain when exporting NDK_ROOT. For example, replace:
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang
 ```
 
 with:
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-22-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-28-arm64-clang
 ```
 
 For each step you will also need to replace the values set for CC and CXX to reflect that change. For example, replace:
 
 ```
-$ export CC=aarch64-linux-android21-clang
-$ export CXX=aarch64-linux-android21-clang++
+$ export CC=aarch64-linux-android28-clang
+$ export CXX=aarch64-linux-android28-clang++
 ```
 
 with:
 
 ```
-$ export CC=aarch64-linux-android22-clang
-$ export CXX=aarch64-linux-android22-clang++
+$ export CC=aarch64-linux-android28-clang
+$ export CXX=aarch64-linux-android28-clang++
 ```
 
 You must do this anywhere CC and CXX are set and for each architecture.
@@ -80,6 +86,8 @@ $ tensorflow/contrib/makefile/download_dependencies.sh
 For both the protobuf and nysnc dependencies we will make four builds: a local x86_64 linux build and then android arm64 (on device), x86_64 (emulator), and x86 (emulator) builds. For tensorflow we will only make the three android builds.
 
 ## Build protobuf with clang
+
+We will be building protobuf for the host environment so that we can compile protoc files to c/c++ files and we will be building protofobuf for our three android targets so that we can consume those files and include protobuf as a dependency for tensorflow.
 
 From tensorflow and specifically *tensorflow/contrib/makefile* run:
 
@@ -130,11 +138,11 @@ objdump -f gen-protobuf/x86_64.linux/lib/libprotobuf.a
 $ mkdir builds/arm64-v8.android
 $ cd builds/arm64-v8.android
 
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 
-$ export CC=aarch64-linux-android21-clang
-$ export CXX=aarch64-linux-android21-clang++
+$ export CC=aarch64-linux-android22-clang
+$ export CXX=aarch64-linux-android22-clang++
 $ export CFLAGS="-fPIE -fPIC"
 $ export CPPFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
@@ -153,7 +161,7 @@ gen-protobuf/arm64-v8.android/lib/libprotobuf.so
 Confirm the architecture:
 
 ```
-~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen-protobuf/arm64-v8.android/lib/libprotobuf.a
+~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang/bin/aarch64-linux-android-objdump -f gen-protobuf/arm64-v8.android/lib/libprotobuf.a
 ```
 
 **Build android x86_64 library for emulator**
@@ -191,11 +199,11 @@ Reset the PATH variable to remove the reference to the previously used NDK_ROOT,
 $ mkdir builds/x86_64.android
 $ cd builds/x86_64.android
 
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86_64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 
-$ export CC=x86_64-linux-android21-clang
-$ export CXX=x86_64-linux-android21-clang++
+$ export CC=x86_64-linux-android22-clang
+$ export CXX=x86_64-linux-android22-clang++
 $ export CFLAGS="-fPIE -fPIC"
 $ export CPPFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
@@ -214,7 +222,7 @@ gen-protobuf/x86_64.android/lib/libprotobuf.so
 Confirm the architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen-protobuf/x86_64.android/lib/libprotobuf.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang/bin/x86_64-linux-android-objdump -f gen-protobuf/x86_64.android/lib/libprotobuf.a
 ```
 
 **Build android x86 library for emulator**
@@ -227,11 +235,11 @@ Reset the PATH variable to remove the reference to the previously used NDK_ROOT,
 $ mkdir builds/x86.android
 $ cd builds/x86.android
 
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-x86-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 
-$ export CC=i686-linux-android21-clang
-$ export CXX=i686-linux-android21-clang++
+$ export CC=i686-linux-android22-clang
+$ export CXX=i686-linux-android22-clang++
 $ export CFLAGS="-fPIE -fPIC"
 $ export CPPFLAGS="-fPIE -fPIC"
 $ export LDFLAGS="-pie -llog"
@@ -250,7 +258,7 @@ gen-protobuf/x86.android/lib/libprotobuf.so
 Confirm the architecture:
 
 ```
-~/android-toolchains/ndk-19-api-21-x86-clang/bin/i686-linux-android-objdump -f gen-protobuf/x86.android/lib/libprotobuf.a
+~/android-toolchains/ndk-21.1.6352462-api-22-x86-clang/bin/i686-linux-android-objdump -f gen-protobuf/x86.android/lib/libprotobuf.a
 ```
 
 **Cleanup**
@@ -303,7 +311,7 @@ objdump -f libnsync.a
 Reset PATH to its original value and update NDK_ROOT and PATH:
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 ```
 
@@ -320,7 +328,7 @@ Add the following to the Makefile, which is taken from the *android* target in *
 
 ```
 AR=aarch64-linux-android-ar
-CC=aarch64-linux-android21-clang++
+CC=aarch64-linux-android22-clang++
 PLATFORM_CPPFLAGS=-DNSYNC_USE_CPP11_TIMEPOINT -DNSYNC_ATOMIC_CPP11 \
                     -I../../platform/c++11 -I../../platform/gcc \
                     -I../../platform/posix -pthread
@@ -355,7 +363,7 @@ tensorflow/contrib/makefile/downloads/nsync/builds/aarch64.android.clang/libnsyn
 Confirm the architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f libnsync.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang/bin/aarch64-linux-android-objdump -f libnsync.a
 ```
 
 **Build android x86_64 library for emulator:**
@@ -363,7 +371,7 @@ $ ~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdu
 Reset PATH to its original value and update NDK_ROOT and PATH:
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86_64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 ```
 
@@ -380,7 +388,7 @@ Add the following to the Makefile, which is taken from the *android* target in *
 
 ```
 AR=x86_64-linux-android-ar
-CC=x86_64-linux-android21-clang++
+CC=x86_64-linux-android22-clang++
 PLATFORM_CPPFLAGS=-DNSYNC_USE_CPP11_TIMEPOINT -DNSYNC_ATOMIC_CPP11 \
                     -I../../platform/c++11 -I../../platform/gcc \
                     -I../../platform/posix -pthread
@@ -415,7 +423,7 @@ tensorflow/contrib/makefile/downloads/nsync/builds/x86_64.android.clang/libnsync
 Confirm the architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f libnsync.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang/bin/x86_64-linux-android-objdump -f libnsync.a
 ```
 
 **Build android x86 library for emulator:**
@@ -423,7 +431,7 @@ $ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdu
 Reset PATH to its original value and update NDK_ROOT and PATH:
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-x86-clang
 $ export PATH=$NDK_ROOT/bin:$PATH
 ```
 
@@ -440,7 +448,7 @@ Add the following to the Makefile, which is taken from the *android* target in *
 
 ```
 AR=i686-linux-android-ar
-CC=i686-linux-android21-clang++
+CC=i686-linux-android22-clang++
 PLATFORM_CPPFLAGS=-DNSYNC_USE_CPP11_TIMEPOINT -DNSYNC_ATOMIC_CPP11 \
                     -I../../platform/c++11 -I../../platform/gcc \
                     -I../../platform/posix -pthread
@@ -475,7 +483,7 @@ tensorflow/contrib/makefile/downloads/nsync/builds/x86.android.clang/libnsync.a
 Confirm the architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/i686-linux-android-objdump -f libnsync.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang/bin/i686-linux-android-objdump -f libnsync.a
 ```
 
 **Cleanup**
@@ -493,7 +501,7 @@ For this we'll use the provided Makefile that we have modified for use with clan
 
 **Set Android Types**
 
-If you would like to build with support for int64 ops set ANDROID_TYPS. This increases the build sizes but may be required for your models:
+If you would like to build with support for int64 ops set ANDROID_TYPES. This increases the build sizes but may be required for your models:
 
 ```
 export ANDROID_TYPES=-D__ANDROID_TYPES_FULL__
@@ -546,7 +554,7 @@ $ export HOST_NSYNC_BUILD=x86_64.linux.c++11
 Update the NDK_ROOT but do not update PATH
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-arm64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang
 ```
 
 Export the target nysnc path:
@@ -555,10 +563,10 @@ Export the target nysnc path:
 $ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/aarch64.android.clang/libnsync.a
 ```
 
-Optionally set the API version you are compiling again. API 21 is the default value:
+Optionally set the API version you are compiling again. API 22 is the default value:
 
 ```
-$ export ANDROID_API_VERSION=21
+$ export ANDROID_API_VERSION=22
 ```
 
 From the repository's root directory, compile tensorflow and grab yourself a cup of coffee:
@@ -578,7 +586,7 @@ gen/lib/android_arm64-v8a/libtensorflow-core.a
 Confirm architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-arm64-clang/bin/aarch64-linux-android-objdump -f gen/lib/android_arm64-v8a/libtensorflow-core.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-arm64-clang/bin/aarch64-linux-android-objdump -f gen/lib/android_arm64-v8a/libtensorflow-core.a
 ```
 
 Clean the gen directories for the next build. We don't run *make clean* because it completely blows out the gen dir.
@@ -597,7 +605,7 @@ $ rm -r proto_text
 Update the NDK_ROOT but do not update PATH
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86_64-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang
 ```
 
 Export the target nysnc path:
@@ -606,10 +614,10 @@ Export the target nysnc path:
 $ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/x86_64.android.clang/libnsync.a
 ```
 
-Optionally set the API version you are compiling again. API 21 is the default value:
+Optionally set the API version you are compiling again. API 22 is the default value:
 
 ```
-$ export ANDROID_API_VERSION=21
+$ export ANDROID_API_VERSION=22
 ```
 
 From the repository's root directory, compile tensorflow and grab yourself a another cup of coffee:
@@ -627,7 +635,7 @@ gen/lib/android_x86_64/libtensorflow-core.a
 Confirm architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/lib/android_x86_64/libtensorflow-core.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-x86_64-clang/bin/x86_64-linux-android-objdump -f gen/lib/android_x86_64/libtensorflow-core.a
 ```
 
 Clean the gen directories for the next build. We don't run *make clean* because it completely blows out the gen dir.
@@ -646,7 +654,7 @@ $ rm -r proto_text
 Update the NDK_ROOT but do not update PATH
 
 ```
-$ export NDK_ROOT=~/android-toolchains/ndk-19-api-21-x86-clang
+$ export NDK_ROOT=~/android-toolchains/ndk-21.1.6352462-api-22-x86-clang
 ```
 
 Export the target nysnc path:
@@ -655,10 +663,10 @@ Export the target nysnc path:
 $ export TARGET_NSYNC_LIB=tensorflow/contrib/makefile/downloads/nsync/builds/x86.android.clang/libnsync.a
 ```
 
-Optionally set the API version you are compiling again. API 21 is the default value. For example:
+Optionally set the API version you are compiling again. API 22 is the default value. For example:
 
 ```
-$ export ANDROID_API_VERSION=21
+$ export ANDROID_API_VERSION=22
 ```
 
 From the repository's root directory, compile tensorflow and grab yourself another cup of coffee:
@@ -676,7 +684,7 @@ gen/lib/android_x86/libtensorflow-core.a
 Confirm architecture:
 
 ```
-$ ~/android-toolchains/ndk-19-api-21-x86-clang/bin/i686-linux-android-objdump -f gen/lib/android_x86/libtensorflow-core.a
+$ ~/android-toolchains/ndk-21.1.6352462-api-22-x86-clang/bin/i686-linux-android-objdump -f gen/lib/android_x86/libtensorflow-core.a
 ```
 
 ## Binaries
