@@ -33,6 +33,8 @@ tensorflow/contrib/cmake/_build/
 local.properties
 gradleBuild
 
+/tensorflow/examples/android/assets/**
+
 # iOS
 *.pbxproj
 *.xcworkspace

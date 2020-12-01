@@ -124,6 +124,10 @@ else
 fi
 export HOST_NSYNC_LIB TARGET_NSYNC_LIB
 
+# Makefile modified for android build to use build name rather than full path
+# It looks like this is normally taken from the output of the compile_nsync.sh script, we're hardcoding it now
+export HOST_NSYNC_BUILD=default.macos.c++11
+
 TF_CC_FLAGS="-O3"
 TF_SCRIPT_FLAGS="-h ${HOST_NSYNC_LIB} -n ${TARGET_NSYNC_LIB}"
 

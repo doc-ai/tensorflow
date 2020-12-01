@@ -11,6 +11,10 @@
 # the first for the host (the machine you're compiling on) and the second for
 # the target (the machine you want the program to run on).
 
+# DOC.AI
+# This Makefile has been modified to use the NDK standalone toolchainly only with
+# the clang frontend.
+
 SHELL := /bin/bash
 
 # Host compilation settings
@@ -51,6 +55,11 @@ ifeq ($(ANDROID_TYPES),)
 	ANDROID_TYPES := -D__ANDROID_TYPES_SLIM__
 endif
 
+# If ANDROID_API_VERSION is not set assume 21
+ifeq ($(ANDROID_API_VERSION),)
+	ANDROID_API_VERSION := 21
+endif
+
 # Try to figure out the host system
 HOST_OS :=
 ifeq ($(OS),Windows_NT)
@@ -73,12 +82,14 @@ HOST_BINDIR := $(MAKEFILE_DIR)/gen/host_bin/
 HOST_GENDIR := $(MAKEFILE_DIR)/gen/host_obj/
 
 # Settings for the host compiler.
-HOST_CXX := $(CC_PREFIX) gcc
+# HOST_CXX := $(CC_PREFIX) gcc
 HOST_CXXFLAGS := --std=c++11
+HOST_CXX := $(CC_PREFIX) clang++
 HOST_LDOPTS :=
 ifeq ($(HAS_GEN_HOST_PROTOC),true)
 	HOST_LDOPTS += -L$(MAKEFILE_DIR)/gen/protobuf-host/lib
 endif
+HOST_LDOPTS += -L$(MAKEFILE_DIR)/downloads/nsync/builds/$(HOST_NSYNC_BUILD)
 HOST_LDOPTS += -L/usr/local/lib
 
 HOST_INCLUDES := \
@@ -100,7 +111,7 @@ endif
 HOST_INCLUDES += -I/usr/local/include
 
 HOST_LIBS := \
-$(HOST_NSYNC_LIB) \
+-lnsync \
 -lstdc++ \
 -lprotobuf \
 -lpthread \
@@ -246,6 +257,7 @@ ifeq ($(HAS_GEN_HOST_PROTOC),true)
 	export LD_LIBRARY_PATH=$(MAKEFILE_DIR)/gen/protobuf-host/lib
 endif
 	LDFLAGS += -all_load
+	CXXFLAGS += -framework CoreFoundation
 endif
 # Make sure that we don't strip global constructors on Linux.
 ifeq ($(TARGET),LINUX)
@@ -341,22 +353,38 @@ ifeq ($(TARGET),ANDROID)
 		MARCH_OPTION :=
 	endif
 
+	# Standalone toolchain
+		
+	ifeq ($(ANDROID_ARCH),arm64-v8a)
+		ARCH_PREFIX := aarch64
+	endif
+	ifeq ($(ANDROID_ARCH),x86_64)
+		ARCH_PREFIX := x86_64
+	endif
+	ifeq ($(ANDROID_ARCH),x86)
+		ARCH_PREFIX := i686
+	endif
+
+	# --sysroot $(NDK_ROOT)/sysroot
+	# --sysroot $(NDK_ROOT)/platforms/android-21/arch-$(SYSROOT_ARCH)
+	
+	# -I$(NDK_ROOT)/sysroot/usr/include/$(BIN_PREFIX)
+
 	ifndef NDK_ROOT
     $(error "NDK_ROOT is not defined.")
 	endif
-	CXX := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-g++
-	CC := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-gcc
+	# CXX := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-g++
+	# CC := $(CC_PREFIX) $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-gcc
+	CXX := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android$(ANDROID_API_VERSION)-clang++
+	CC := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android$(ANDROID_API_VERSION)-clang
 	CXXFLAGS +=\
---sysroot $(NDK_ROOT)/platforms/android-21/arch-$(SYSROOT_ARCH) \
+$(ANDROID_TYPES) \
 -Wno-narrowing \
 -fomit-frame-pointer \
 $(MARCH_OPTION) \
 -fPIE \
 -fPIC
 	INCLUDES = \
--I$(NDK_ROOT)/sources/android/support/include \
--I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/include \
--I$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(ANDROID_ARCH)/include \
 -I. \
 -I$(MAKEFILE_DIR)/downloads/ \
 -I$(MAKEFILE_DIR)/downloads/eigen \
@@ -369,9 +397,13 @@ $(MARCH_OPTION) \
 -I$(PROTOGENDIR) \
 -I$(PBTGENDIR)
 
+	# otherwise std:stoi is unavailable
+	# CXXFLAGS += -D_GLIBCXX_USE_C99
+	
+	# -lgnustl_static
+
 	LIBS := \
 $(TARGET_NSYNC_LIB) \
--lgnustl_static \
 -lprotobuf \
 -llog \
 -lz \
@@ -379,17 +411,17 @@ $(TARGET_NSYNC_LIB) \
 -ldl \
 -latomic
 
-	LD := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/$(BIN_PREFIX)/bin/ld
+	# LD := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/$(BIN_PREFIX)/bin/ld
 
 	LDFLAGS := \
 $(MARCH_OPTION) \
 -L$(MAKEFILE_DIR)/gen/protobuf_android/$(ANDROID_ARCH)/lib \
--L$(NDK_ROOT)/sources/cxx-stl/gnu-libstdc++/4.9/libs/$(ANDROID_ARCH) \
 -fPIE \
 -pie \
 -v
 
-	AR := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-ar
+	# AR := $(NDK_ROOT)/toolchains/$(TOOLCHAIN)/prebuilt/$(ANDROID_HOST_OS_ARCH)/bin/$(BIN_PREFIX)-ar
+	AR := $(NDK_ROOT)/bin/$(ARCH_PREFIX)-linux-android-ar
 	ARFLAGS := r
 	LIBFLAGS += -Wl,--allow-multiple-definition -Wl,--whole-archive
 
