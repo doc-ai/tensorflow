@@ -83,7 +83,7 @@ HOST_GENDIR := $(MAKEFILE_DIR)/gen/host_obj/
 
 # Settings for the host compiler.
 # HOST_CXX := $(CC_PREFIX) gcc
-# HOST_CXXFLAGS := --std=c++11
+HOST_CXXFLAGS := --std=c++11
 HOST_CXX := $(CC_PREFIX) clang++
 HOST_LDOPTS :=
 ifeq ($(HAS_GEN_HOST_PROTOC),true)
