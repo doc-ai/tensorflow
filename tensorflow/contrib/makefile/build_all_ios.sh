@@ -25,7 +25,7 @@ fi
 
 usage() {
   echo "Usage: $(basename "$0") [-a:T]"
-  echo "-a [build_arch] build only for specified arch x86_64 [default=all]"
+  echo "-a [build_arch] build only for specified arch x86_64 [default=x86_64 arm64]."
   echo "-g [graph] optimize and selectively register ops only for this graph"
   echo "-T only build tensorflow (dont download other deps etc)"
   exit 1

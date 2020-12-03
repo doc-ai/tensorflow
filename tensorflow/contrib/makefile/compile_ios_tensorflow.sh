@@ -46,11 +46,11 @@ fi
 usage() {
   echo "Usage: $(basename "$0") [-a]"
   echo "-a [build_arch] build for specified arch comma separate for multiple archs (eg: x86_64,arm64)"
-  echo "default is [x86_64, armv7, armv7s, arm64]"
+  echo "default is [x86_64, arm64]"
   exit 1
 }
 
-BUILD_TARGET="x86_64 armv7 armv7s arm64"
+BUILD_TARGET="x86_64 arm64" # armv7 armv7s
 while getopts "a:f:h:n:" opt_name; do
   case "$opt_name" in
     a) BUILD_TARGET="${OPTARG}";;
