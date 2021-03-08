@@ -106,6 +106,7 @@ tensorflow/core/kernels/cwise_op_tanh.cc
 tensorflow/core/kernels/cwise_op_xdivy.cc
 tensorflow/core/kernels/cwise_op_xlogy.cc
 tensorflow/core/kernels/cwise_ops_common.cc
+tensorflow/core/kernels/data/optional_ops.cc
 tensorflow/core/kernels/data_format_ops.cc
 tensorflow/core/kernels/decode_bmp_op.cc
 tensorflow/core/kernels/decode_proto_op.cc
@@ -307,6 +308,7 @@ tensorflow/core/ops/candidate_sampling_ops.cc
 tensorflow/core/ops/control_flow_ops.cc
 tensorflow/core/ops/ctc_ops.cc
 tensorflow/core/ops/data_flow_ops.cc
+tensorflow/core/ops/dataset_ops.cc
 tensorflow/core/ops/function_ops.cc
 tensorflow/core/ops/functional_grad.cc
 tensorflow/core/ops/functional_ops.cc
