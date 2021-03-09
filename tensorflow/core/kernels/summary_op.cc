@@ -36,6 +36,9 @@ class SummaryScalarOp : public OpKernel {
  public:
   explicit SummaryScalarOp(OpKernelConstruction* context) : OpKernel(context) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* c) override {
     const Tensor& tags = c->input(0);
     const Tensor& values = c->input(1);
@@ -60,6 +63,7 @@ class SummaryScalarOp : public OpKernel {
     OP_REQUIRES_OK(c, c->allocate_output(0, TensorShape({}), &summary_tensor));
     CHECK(s.SerializeToString(&summary_tensor->scalar<string>()()));
   }
+  #endif
 
   // If there's only one tag, include it in the error message
   static string SingleTag(const Tensor& tags) {
@@ -78,6 +82,9 @@ class SummaryHistoOp : public OpKernel {
   // boundaries as an option.
   explicit SummaryHistoOp(OpKernelConstruction* context) : OpKernel(context) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* c) override {
     const Tensor& tags = c->input(0);
     const Tensor& values = c->input(1);
@@ -109,6 +116,7 @@ class SummaryHistoOp : public OpKernel {
     OP_REQUIRES_OK(c, c->allocate_output(0, TensorShape({}), &summary_tensor));
     CHECK(s.SerializeToString(&summary_tensor->scalar<string>()()));
   }
+  #endif
 };
 
 #define REGISTER(T)                                                       \
@@ -133,6 +141,9 @@ class SummaryMergeOp : public OpKernel {
  public:
   explicit SummaryMergeOp(OpKernelConstruction* context) : OpKernel(context) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* c) override {
     Summary s;
     std::unordered_set<string> tags;
@@ -166,6 +177,7 @@ class SummaryMergeOp : public OpKernel {
     OP_REQUIRES_OK(c, c->allocate_output(0, TensorShape({}), &summary_tensor));
     CHECK(s.SerializeToString(&summary_tensor->scalar<string>()()));
   }
+  #endif
 };
 
 REGISTER_KERNEL_BUILDER(Name("MergeSummary").Device(DEVICE_CPU),

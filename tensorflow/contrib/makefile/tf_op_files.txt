@@ -278,6 +278,8 @@ tensorflow/core/kernels/strided_slice_op_inst_7.cc
 tensorflow/core/kernels/strided_slice_op_define_grad.cc
 tensorflow/core/kernels/string_join_op.cc
 tensorflow/core/kernels/string_util.cc
+tensorflow/core/kernels/summary_op.cc
+tensorflow/core/kernels/summary_kernels.cc
 tensorflow/core/kernels/tensor_array.cc
 tensorflow/core/kernels/tensor_array_ops.cc
 tensorflow/core/kernels/tile_functor_cpu.cc
@@ -333,4 +335,5 @@ tensorflow/core/ops/sendrecv_ops.cc
 tensorflow/core/ops/sparse_ops.cc
 tensorflow/core/ops/state_ops.cc
 tensorflow/core/ops/string_ops.cc
+tensorflow/core/ops/summary_ops.cc
 tensorflow/core/ops/training_ops.cc

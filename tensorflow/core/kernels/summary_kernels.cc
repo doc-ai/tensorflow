@@ -35,6 +35,9 @@ class CreateSummaryFileWriterOp : public OpKernel {
   explicit CreateSummaryFileWriterOp(OpKernelConstruction* ctx)
       : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("logdir", &tmp));
@@ -56,6 +59,7 @@ class CreateSummaryFileWriterOp : public OpKernel {
                                   filename_suffix, ctx->env(), s);
                             }));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("CreateSummaryFileWriter").Device(DEVICE_CPU),
                         CreateSummaryFileWriterOp);
@@ -64,6 +68,9 @@ class CreateSummaryDbWriterOp : public OpKernel {
  public:
   explicit CreateSummaryDbWriterOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     const Tensor* tmp;
     OP_REQUIRES_OK(ctx, ctx->input("db_uri", &tmp));
@@ -92,6 +99,7 @@ class CreateSummaryDbWriterOp : public OpKernel {
               return Status::OK();
             }));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("CreateSummaryDbWriter").Device(DEVICE_CPU),
                         CreateSummaryDbWriterOp);
@@ -100,11 +108,15 @@ class FlushSummaryWriterOp : public OpKernel {
  public:
   explicit FlushSummaryWriterOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
     OP_REQUIRES_OK(ctx, s->Flush());
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("FlushSummaryWriter").Device(DEVICE_CPU),
                         FlushSummaryWriterOp);
@@ -113,10 +125,14 @@ class CloseSummaryWriterOp : public OpKernel {
  public:
   explicit CloseSummaryWriterOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     OP_REQUIRES_OK(ctx, DeleteResource<SummaryWriterInterface>(
                             ctx, HandleFromInput(ctx, 0)));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("CloseSummaryWriter").Device(DEVICE_CPU),
                         CloseSummaryWriterOp);
@@ -125,6 +141,9 @@ class WriteSummaryOp : public OpKernel {
  public:
   explicit WriteSummaryOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -141,6 +160,7 @@ class WriteSummaryOp : public OpKernel {
 
     OP_REQUIRES_OK(ctx, s->WriteTensor(step, *t, tag, serialized_metadata));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("WriteSummary").Device(DEVICE_CPU),
                         WriteSummaryOp);
@@ -149,6 +169,9 @@ class WriteRawProtoSummaryOp : public OpKernel {
  public:
   explicit WriteRawProtoSummaryOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -177,6 +200,7 @@ class WriteRawProtoSummaryOp : public OpKernel {
     }
     OP_REQUIRES_OK(ctx, s->WriteEvent(std::move(event)));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("WriteRawProtoSummary").Device(DEVICE_CPU),
                         WriteRawProtoSummaryOp);
@@ -185,6 +209,9 @@ class ImportEventOp : public OpKernel {
  public:
   explicit ImportEventOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -198,6 +225,7 @@ class ImportEventOp : public OpKernel {
     }
     OP_REQUIRES_OK(ctx, s->WriteEvent(std::move(event)));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("ImportEvent").Device(DEVICE_CPU), ImportEventOp);
 
@@ -205,6 +233,9 @@ class WriteScalarSummaryOp : public OpKernel {
  public:
   explicit WriteScalarSummaryOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -219,6 +250,7 @@ class WriteScalarSummaryOp : public OpKernel {
 
     OP_REQUIRES_OK(ctx, s->WriteScalar(step, *t, tag));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("WriteScalarSummary").Device(DEVICE_CPU),
                         WriteScalarSummaryOp);
@@ -227,6 +259,9 @@ class WriteHistogramSummaryOp : public OpKernel {
  public:
   explicit WriteHistogramSummaryOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -241,6 +276,7 @@ class WriteHistogramSummaryOp : public OpKernel {
 
     OP_REQUIRES_OK(ctx, s->WriteHistogram(step, *t, tag));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("WriteHistogramSummary").Device(DEVICE_CPU),
                         WriteHistogramSummaryOp);
@@ -255,6 +291,9 @@ class WriteImageSummaryOp : public OpKernel {
     max_images_ = static_cast<int32>(max_images_tmp);
   }
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -275,6 +314,7 @@ class WriteImageSummaryOp : public OpKernel {
 
     OP_REQUIRES_OK(ctx, s->WriteImage(step, *t, tag, max_images_, *bad_color));
   }
+  #endif
 
  private:
   int32 max_images_;
@@ -290,6 +330,9 @@ class WriteAudioSummaryOp : public OpKernel {
                 errors::InvalidArgument("max_outputs must be > 0"));
   }
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -307,6 +350,7 @@ class WriteAudioSummaryOp : public OpKernel {
     OP_REQUIRES_OK(ctx,
                    s->WriteAudio(step, *t, tag, max_outputs_, sample_rate));
   }
+  #endif
 
  private:
   int max_outputs_;
@@ -318,6 +362,9 @@ class WriteGraphSummaryOp : public OpKernel {
  public:
   explicit WriteGraphSummaryOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
+  #if defined(IS_MOBILE_PLATFORM)
+  void Compute(OpKernelContext* c) override {}
+  #else
   void Compute(OpKernelContext* ctx) override {
     core::RefCountPtr<SummaryWriterInterface> s;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &s));
@@ -333,6 +380,7 @@ class WriteGraphSummaryOp : public OpKernel {
     }
     OP_REQUIRES_OK(ctx, s->WriteGraph(step, std::move(graph)));
   }
+  #endif
 };
 REGISTER_KERNEL_BUILDER(Name("WriteGraphSummary").Device(DEVICE_CPU),
                         WriteGraphSummaryOp);
