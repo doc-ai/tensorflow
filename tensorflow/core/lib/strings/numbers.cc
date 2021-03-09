@@ -113,13 +113,13 @@ T locale_independent_strtonum(const char* str, const char** endptr) {
   return result;
 }
 
-static inline const double_conversion::StringToDoubleConverter&
+static inline const tf_double_conversion::StringToDoubleConverter&
 StringToFloatConverter() {
-  static const double_conversion::StringToDoubleConverter converter(
-      double_conversion::StringToDoubleConverter::ALLOW_LEADING_SPACES |
-          double_conversion::StringToDoubleConverter::ALLOW_HEX |
-          double_conversion::StringToDoubleConverter::ALLOW_TRAILING_SPACES |
-          double_conversion::StringToDoubleConverter::ALLOW_CASE_INSENSIBILITY,
+  static const tf_double_conversion::StringToDoubleConverter converter(
+      tf_double_conversion::StringToDoubleConverter::ALLOW_LEADING_SPACES |
+          tf_double_conversion::StringToDoubleConverter::ALLOW_HEX |
+          tf_double_conversion::StringToDoubleConverter::ALLOW_TRAILING_SPACES |
+          tf_double_conversion::StringToDoubleConverter::ALLOW_CASE_INSENSIBILITY,
       0., 0., "inf", "nan");
   return converter;
 }

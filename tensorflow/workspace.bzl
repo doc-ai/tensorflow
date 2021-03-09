@@ -782,8 +782,8 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         strip_prefix = "double-conversion-3992066a95b823efc8ccc1baf82a1cfc73f6e9b8",
         system_build_file = clean_dep("//third_party/systemlibs:double_conversion.BUILD"),
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/double-conversion/archive/3992066a95b823efc8ccc1baf82a1cfc73f6e9b8.zip",
-            "https://github.com/google/double-conversion/archive/3992066a95b823efc8ccc1baf82a1cfc73f6e9b8.zip",
+            "https://storage.googleapis.com/tensorio-build/dependencies/release/2.0/double-conversion/double-conversion-3992066a95b823efc8ccc1baf82a1cfc73f6e9b8.zip",
+            "https://storage.googleapis.com/tensorio-build/dependencies/release/2.0/double-conversion/double-conversion-3992066a95b823efc8ccc1baf82a1cfc73f6e9b8.zip",
         ],
     )
 

@@ -42,7 +42,7 @@ readonly PROTOBUF_TAG="$(grep -o 'https://github.com/protocolbuffers/protobuf/ar
 # the archive has been propagated in mirror.tensorflow.org.
 RE2_URL="$(grep -o 'https://github.com/google/re2/.*tar\.gz' "${BZL_FILE_PATH}" | head -n1)"
 FFT2D_URL="$(grep -o 'http.*fft2d\.tgz' "${BZL_FILE_PATH}" | grep -v bazel-mirror | head -n1)"
-DOUBLE_CONVERSION_URL="$(grep -o "https.*google/double-conversion.*\.zip" "${BZL_FILE_PATH}" | head -n1)"
+DOUBLE_CONVERSION_URL="$(grep -o "https.*storage.googleapis.com/tensorio-build.*\.zip" "${BZL_FILE_PATH}" | head -n1)"
 ABSL_URL="$(grep -o 'https://github.com/abseil/abseil-cpp/.*tar.gz' "${BZL_FILE_PATH}" | head -n1)"
 CUB_URL="$(grep -o 'https.*cub/archive.*zip' "${BZL_FILE_PATH}" | grep -v mirror.bazel | head -n1)"
 
