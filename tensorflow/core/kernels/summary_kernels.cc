@@ -18,17 +18,31 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/summary.pb.h"
 #include "tensorflow/core/lib/core/refcount.h"
-#include "tensorflow/core/lib/db/sqlite.h"
 #include "tensorflow/core/platform/protobuf.h"
+#include "tensorflow/core/util/event.pb.h"
+
+#if !defined(IS_MOBILE_PLATFORM)
+#include "tensorflow/core/lib/db/sqlite.h"
 #include "tensorflow/core/summary/schema.h"
 #include "tensorflow/core/summary/summary_db_writer.h"
 #include "tensorflow/core/summary/summary_file_writer.h"
-#include "tensorflow/core/util/event.pb.h"
+#endif
+
 
 namespace tensorflow {
 
+#if defined(IS_MOBILE_PLATFORM)
+class SummaryWriterOp : public OpKernel {
+  public:
+    explicit SummaryWriterOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+    void Compute(OpKernelContext* c) override {}
+};
+REGISTER_KERNEL_BUILDER(Name("SummaryWriter").Device(DEVICE_CPU),
+                       SummaryWriterOp);
+#else
 REGISTER_KERNEL_BUILDER(Name("SummaryWriter").Device(DEVICE_CPU),
                         ResourceHandleOp<SummaryWriterInterface>);
+#endif
 
 class CreateSummaryFileWriterOp : public OpKernel {
  public:
